@@ -21,7 +21,7 @@ public class Main {
 			System.exit(0);
 		}
 
-		SparkConf sparkConf = new SparkConf().setAppName(Main.class.getName())/*.setMaster("local")*/;
+		SparkConf sparkConf = new SparkConf().setAppName(Main.class.getName())/*.setMaster("local")*/.set("spark.hadoop.validateOutputSpecs", "false");;
 		JavaSparkContext context = new JavaSparkContext(sparkConf);
 
 		PairFlatMapFunction<String, Set<String>, Integer> mapper = new PairFlatMapFunction<String, Set<String>, Integer>() {
