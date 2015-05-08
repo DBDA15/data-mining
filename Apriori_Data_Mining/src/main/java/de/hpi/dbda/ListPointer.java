@@ -85,7 +85,7 @@ public class ListPointer implements List{
 		throw new NotImplementedError();
 	}
 	public boolean isEmpty() {
-		throw new NotImplementedError();
+		return listElements.size() <= 1;
 	}
 	public Iterator iterator() {
 		throw new NotImplementedError();
@@ -115,7 +115,7 @@ public class ListPointer implements List{
 		throw new NotImplementedError();
 	}
 	public int size() {
-		throw new NotImplementedError();
+		return listElements.size() - 1;
 	}
 	public List subList(int fromIndex, int toIndex) {
 		throw new NotImplementedError();

@@ -30,43 +30,43 @@ public class Main {
 		return true;
 	}
 	
-	public static Set<List<String>> generateCandidates(List<Tuple2<List<String>, Integer>> largeItems) {
-		Set<List<String>> allLargeItems=new HashSet<List<String>>(largeItems.size());
-		for(Tuple2<List<String>,Integer> tuple:largeItems) {
-			allLargeItems.add(tuple._1);
+	public static Set<List<String>> generateCandidates(List<Tuple2<List<String>, Integer>> largeItemTuples) {
+		Set<List<String>> largeItems=new HashSet<List<String>>(largeItemTuples.size());
+		for(Tuple2<List<String>,Integer> tuple:largeItemTuples) {
+			largeItems.add(tuple._1);
 		}
 		
 		HashSet<List<String>> result = new HashSet<List<String>>();
-		MVMap map = new MVMap();
-		for (int i = 0; i < largeItems.size(); i++) {
-			ListPointer lp = new ListPointer(largeItems.get(i)._1, largeItems.get(i)._1.size() - 1);
-			map.put(lp, largeItems.get(i)._1);
+		MultiValueMapWithArrayList map = new MultiValueMapWithArrayList();
+		for (int i = 0; i < largeItemTuples.size(); i++) {
+			ListPointer key = new ListPointer(largeItemTuples.get(i)._1, largeItemTuples.get(i)._1.size() - 1);
+			map.put(key, largeItemTuples.get(i)._1);
 		}
 		
 		for (Object key : map.keySet()) {
 			ArrayList<List<String>> entrySet = (ArrayList<List<String>>)map.getCollection(key);
-			for (int i = 0; i < entrySet.size(); i++) {
+			for (int i = 0; i < entrySet.size() - 1; i++) {
 				for (int j = i+1; j < entrySet.size(); j++) {
-					List<String> res;
-					if (entrySet.get(i).get(entrySet.get(i).size()-1).compareTo(entrySet.get(j).get(entrySet.get(j).size()-1)) < 0) {
-						res = new ArrayList<String>(entrySet.get(i));
-						res.add(entrySet.get(j).get(entrySet.get(j).size()-1));
+					List<String> candidate;
+					if (entrySet.get(i).get(entrySet.get(i).size()-1).compareTo(entrySet.get(j).get(entrySet.get(j).size()-1)) < 0) { // if the item set at position i is "smaller than" the item set at position j
+						candidate = new ArrayList<String>(entrySet.get(i));
+						candidate.add(entrySet.get(j).get(entrySet.get(j).size()-1));
 					} else {
-						res = new ArrayList<String>(entrySet.get(j));
-						res.add(entrySet.get(i).get(entrySet.get(i).size()-1));
+						candidate = new ArrayList<String>(entrySet.get(j));
+						candidate.add(entrySet.get(i).get(entrySet.get(i).size()-1));
 					}
 					
-					boolean keepRes=true;
-					for(int ignoreIndex = 0; ignoreIndex < res.size() - 2; ignoreIndex++) {
-						LinkedList<String> subset = new LinkedList<String>(res);
+					boolean keepCandidate=true;
+					for(int ignoreIndex = 0; ignoreIndex < candidate.size() - 2; ignoreIndex++) {
+						LinkedList<String> subset = new LinkedList<String>(candidate);
 						subset.remove(ignoreIndex);
-						if(!allLargeItems.contains(subset)){
-							keepRes=false;
+						if(!largeItems.contains(subset)){
+							keepCandidate=false;
 							break;
 						}
 					}
-					if(keepRes){
-						result.add(res);
+					if(keepCandidate){
+						result.add(candidate);
 					}
 					/* TODO: ausprobieren
 					for(int ignoreIndex = 0; ignoreIndex < res.size() - 2; ignoreIndex++) {
@@ -85,7 +85,7 @@ public class Main {
 			}
 		}
 		
-		return null;
+		return result;
 	}
 	
 	public static void main(String[] args) {
@@ -125,19 +125,25 @@ public class Main {
 	
 	Function<Tuple2<List<String>, Integer>, Boolean> minSupportFilter = new Function<Tuple2<List<String>, Integer>, Boolean>() {
 		private static final long serialVersionUID = 4372559437013933640L;
-		private static final int minSupport = 1000;
+		private static final int minSupport = 2;
 
 		public Boolean call(Tuple2<List<String>, Integer> input) throws Exception {
 			return input._2 >= minSupport;
 		}
 	};
 	
+	long startTime = System.currentTimeMillis();
 	JavaRDD<String> transactions = context.textFile(args[0]);
 	JavaPairRDD<List<String>, Integer> transactionsMapped = transactions.flatMapToPair(mapper);
 	JavaPairRDD<List<String>, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
 	JavaPairRDD<List<String>, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
 	List<Tuple2<List<String>, Integer>> collected = filteredSupport.collect();
-	generateCandidates(collected);
+	System.out.println("the map-reduce-step took " + ((System.currentTimeMillis()-startTime) / 1000) + " seconds");
 	
+	startTime = System.currentTimeMillis();
+	generateCandidates(collected);
+	System.out.println("the candidate generation took " + ((System.currentTimeMillis()-startTime) / 1000) + " seconds");
+	
+	context.close();
 	}
 }
