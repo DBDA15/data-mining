@@ -110,7 +110,7 @@ public class Main {
 				itemList.add(item);
 				result.add(new Tuple2<List<String>, Integer>(itemList, 1));
 			}
-			return null;
+			return result;
 		}
 		
 	};
