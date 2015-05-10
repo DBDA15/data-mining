@@ -8,7 +8,7 @@ import java.util.HashMap;
 
 
 public class MultiValueMapWithArrayList extends MultiValueMap {
-	public MultiValueMapWithArrayList () {
+	public MultiValueMapWithArrayList() {
 		super(new HashMap(), FactoryUtils.instantiateFactory(new ArrayList().getClass()));
 	}
 }
