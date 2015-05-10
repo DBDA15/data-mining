@@ -1,6 +1,7 @@
 package de.hpi.dbda;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -98,23 +99,33 @@ public class Main {
 	SparkConf sparkConf = new SparkConf().setAppName(Main.class.getName()).set("spark.hadoop.validateOutputSpecs", "false");;
 	JavaSparkContext context = new JavaSparkContext(sparkConf);
 
-	PairFlatMapFunction<String, List<String>, Integer> mapper = new PairFlatMapFunction<String, List<String>, Integer>() {
+	Function<String, List<String>> transactionParser = new Function<String, List<String>>() {
 		private static final long serialVersionUID = -4625524329716723997L;
 
-		public Iterable<Tuple2<List<String>, Integer>> call(String line) throws Exception {
-			HashSet<Tuple2<List<String>, Integer>> result = new HashSet<Tuple2<List<String>, Integer>>();
-			
+		public List<String> call(String line) throws Exception {
 			String[] items = line.split(" ");
-			for (String item : items) {
-				List<String> itemList = new ArrayList<String>();
-				itemList.add(item);
-				result.add(new Tuple2<List<String>, Integer>(itemList, 1));
-			}
-			return result;
+			Arrays.sort(items);
+			return Arrays.asList(items);
 		}
 		
 	};
-	
+
+		PairFlatMapFunction<List<String>, List<String>, Integer> singleItemsExtractor = new PairFlatMapFunction<List<String>, List<String>, Integer>() {
+			private static final long serialVersionUID = -6501622718277608505L;
+
+			public Iterable<Tuple2<List<String>, Integer>> call(List<String> transaction) throws Exception {
+				HashSet<Tuple2<List<String>, Integer>> result = new HashSet<Tuple2<List<String>, Integer>>();
+
+				for (String item : transaction) {
+					List<String> itemList = new ArrayList<String>();
+					itemList.add(item);
+					result.add(new Tuple2<List<String>, Integer>(itemList, 1));
+				}
+				return result;
+			}
+
+			};
+
 	Function2<Integer, Integer, Integer> reducer = new Function2<Integer, Integer, Integer>() {
 		private static final long serialVersionUID = 9090470139360266644L;
 
@@ -132,17 +143,30 @@ public class Main {
 		}
 	};
 	
+	boolean firstRound = true;
+	Set<List<String>> candidates = null;
 	long startTime = System.currentTimeMillis();
-	JavaRDD<String> transactions = context.textFile(args[0]);
-	JavaPairRDD<List<String>, Integer> transactionsMapped = transactions.flatMapToPair(mapper);
+	JavaRDD<String> inputLines = context.textFile(args[0]);
+	JavaRDD<List<String>> transactions = inputLines.map(transactionParser);
+
+	do {
+	JavaPairRDD<List<String>, Integer> transactionsMapped;
+	if (firstRound) {
+		firstRound = false;
+		transactionsMapped = transactions.flatMapToPair(singleItemsExtractor);
+	} else {
+		CandidateMatcher myCandidateMatcher = new CandidateMatcher(candidates);
+		transactionsMapped = transactions.flatMapToPair(myCandidateMatcher);
+	}
 	JavaPairRDD<List<String>, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
 	JavaPairRDD<List<String>, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
 	List<Tuple2<List<String>, Integer>> collected = filteredSupport.collect();
 	System.out.println("the map-reduce-step took " + ((System.currentTimeMillis()-startTime) / 1000) + " seconds");
 	
 	startTime = System.currentTimeMillis();
-	generateCandidates(collected);
+	candidates = generateCandidates(collected);
 	System.out.println("the candidate generation took " + ((System.currentTimeMillis()-startTime) / 1000) + " seconds");
+	} while(candidates.size() > 0);
 	
 	context.close();
 	}
