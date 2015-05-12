@@ -9,6 +9,6 @@ import java.util.HashMap;
 
 public class MultiValueMapWithArrayList extends MultiValueMap {
 	public MultiValueMapWithArrayList() {
-		super(new HashMap(), FactoryUtils.instantiateFactory(new ArrayList().getClass()));
+		super(new HashMap<Object, Object>(), FactoryUtils.instantiateFactory(new ArrayList<Object>().getClass()));
 	}
 }
