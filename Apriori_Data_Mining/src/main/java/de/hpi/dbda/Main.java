@@ -11,6 +11,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -20,6 +21,9 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 
+import de.hpi.dbda.trie.InnerTrieNode;
+import de.hpi.dbda.trie.TrieLeaf;
+import de.hpi.dbda.trie.TrieNode;
 import scala.Tuple2;
 
 public class Main {
@@ -157,6 +161,90 @@ public class Main {
 		return result;
 	}
 
+	private static ArrayList<IntArray> candidateLookup = null;
+
+	private static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
+		TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
+		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length];
+		candidateLookup = new ArrayList<IntArray>(sortedCandidates);
+
+		// for every candidate, find the smallest index at which it differs from the previous candidate
+		int[] firstDifferentElementIndices = new int[sortedCandidates.size()];
+		firstDifferentElementIndices[0] = sortedCandidates.iterator().next().value.length - 1;
+		IntArray previousCandidate = null;
+		int candidateIndex = 0;
+		for (IntArray candidate : sortedCandidates) {
+			if (previousCandidate != null) {
+				for (int i = 0; i < candidate.value.length; i++) {
+					if (candidate.value[i] != previousCandidate.value[i]) {
+						firstDifferentElementIndices[candidateIndex] = i;
+						break;
+					}
+				}
+			}
+			candidateIndex++;
+			previousCandidate = candidate;
+		}
+
+		// create a trie containing the nodes for the first candidate only
+		for (int level = 0; level < sortedCandidates.iterator().next().value.length; level++) {
+			int childCount = countChildren(firstDifferentElementIndices, 0, level);
+
+			InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new TrieNode[childCount]);
+			if (level != 0) {
+				currentTriePath[level - 1].edgeLabels[0] = sortedCandidates.iterator().next().value[level - 1];
+				currentTriePath[level - 1].children[0] = newNode;
+			}
+			currentTriePath[level] = newNode;
+		}
+
+		candidateIndex = 0;
+		for (IntArray candidate : sortedCandidates) {
+			// find the leftmost child slot that doesn't contain any data
+			int childIndex;
+			InnerTrieNode anchorNode = currentTriePath[firstDifferentElementIndices[candidateIndex]];
+			for (childIndex = anchorNode.children.length - 1; anchorNode.children[childIndex] == null && childIndex > 0; childIndex--) {
+				// nothing to do here - the whole logic is in the loop header
+			}
+			if (anchorNode.children[childIndex] != null) {
+				childIndex++;
+			}
+
+			// create the new InnerTrieNodes that are needed for candidate
+			for (int level = firstDifferentElementIndices[candidateIndex] + 1; level < candidate.value.length; level++) {
+				int childCount = countChildren(firstDifferentElementIndices, candidateIndex, level);
+
+				InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new TrieNode[childCount]);
+				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
+				currentTriePath[level - 1].children[childIndex] = newNode;
+				currentTriePath[level] = newNode;
+				childIndex = 0;
+			}
+
+			// create the TrieLeaf for candidate
+			int level = candidate.value.length;
+			TrieLeaf newNode = new TrieLeaf(candidateIndex);
+			currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
+			currentTriePath[level - 1].children[childIndex] = newNode;
+
+			candidateIndex++;
+		}
+
+		return currentTriePath[0];
+	}
+
+	private static int countChildren(int[] firstDifferentElementIndices, int currentCandidateIndex, int level) {
+		int childCount = 1;
+		for (int i = currentCandidateIndex + 1; i < firstDifferentElementIndices.length; i++) {
+			if (firstDifferentElementIndices[i] == level) {
+				childCount++;
+			} else if (firstDifferentElementIndices[i] < level) {
+				break;
+			}
+		}
+		return childCount;
+	}
+
 	private static List<IntArray> intCompressInputFile(String inputPath) throws IOException {
 		Map<String, Integer> compressionMap = new HashMap<String, Integer>();
 		BufferedReader reader = new BufferedReader(new FileReader(inputPath));
@@ -186,6 +274,116 @@ public class Main {
 		}
 		reader.close();
 		return compressedFile;
+	}
+
+	private static void aprioriOnIntsWithTrie(String[] args, JavaSparkContext context) throws IOException {
+		Function<IntArray, IntArray> transactionParser = new Function<IntArray, IntArray>() {
+			private static final long serialVersionUID = 165521644289765913L;
+
+			public IntArray call(IntArray items) throws Exception {
+				Arrays.sort(items.value);
+				return items;
+			}
+
+		};
+
+		PairFlatMapFunction<IntArray, Integer, Integer> singleItemsExtractor = new PairFlatMapFunction<IntArray, Integer, Integer>() {
+			private static final long serialVersionUID = -2714321550777030577L;
+
+			public Iterable<Tuple2<Integer, Integer>> call(IntArray transaction) throws Exception {
+				HashSet<Tuple2<Integer, Integer>> result = new HashSet<Tuple2<Integer, Integer>>();
+
+				for (int item : transaction.value) {
+					result.add(new Tuple2<Integer, Integer>(item, 1));
+				}
+				return result;
+			}
+
+		};
+
+		Function2<Integer, Integer, Integer> reducer = new Function2<Integer, Integer, Integer>() {
+			private static final long serialVersionUID = 9090470139360266644L;
+
+			public Integer call(Integer count1, Integer count2) throws Exception {
+				return count1 + count2;
+			}
+		};
+
+		Function<Tuple2<Integer, Integer>, Boolean> minSupportFilter = new Function<Tuple2<Integer, Integer>, Boolean>() {
+			private static final long serialVersionUID = 1188423613305352530L;
+			private static final int minSupport = 1000;
+
+			public Boolean call(Tuple2<Integer, Integer> input) throws Exception {
+				return input._2 >= minSupport;
+			}
+		};
+
+		boolean firstRound = true;
+		Set<IntArray> candidates = null;
+		InnerTrieNode trie = null;
+
+		long startTime = System.currentTimeMillis();
+		List<IntArray> compressedInputFile = intCompressInputFile(args[0]);
+		System.out.println("compressing the input file on the master took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		System.out.println("Memory in use [MB]: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024);
+
+		startTime = System.currentTimeMillis();
+		JavaRDD<IntArray> inputLines = context.parallelize(compressedInputFile);
+		System.out.println("parallelizing the compressed input file took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+
+		startTime = System.currentTimeMillis();
+		JavaRDD<IntArray> transactions = inputLines.map(transactionParser);
+		do {
+			JavaPairRDD<Integer, Integer> transactionsMapped;
+			if (firstRound) {
+				transactionsMapped = transactions.flatMapToPair(singleItemsExtractor);
+			} else {
+				CandidateMatcherTrie myCandidateMatcher = new CandidateMatcherTrie(trie);
+				transactionsMapped = transactions.flatMapToPair(myCandidateMatcher);
+			}
+			JavaPairRDD<Integer, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
+			JavaPairRDD<Integer, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
+			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
+			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+
+			startTime = System.currentTimeMillis();
+			candidates = generateCandidatesInt(spellOutLargeItems(collected, firstRound));
+			if (candidates.size() > 0) {
+				trie = candidatesToTrie(candidates);
+			}
+			firstRound = false;
+			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
+		} while (candidates.size() > 0);
+	}
+
+	private static List<Tuple2<IntArray, Integer>> spellOutLargeItems(List<Tuple2<Integer, Integer>> collected, boolean firstRound) {
+		ArrayList<Tuple2<IntArray, Integer>> result = new ArrayList<Tuple2<IntArray, Integer>>(collected.size());
+		if (firstRound) {
+			for (Tuple2<Integer, Integer> largeItemSet : collected) {
+				result.add(new Tuple2<IntArray, Integer>(new IntArray(new int[] { largeItemSet._1 }), largeItemSet._2));
+			}
+		} else {
+			for (Tuple2<Integer, Integer> largeItemSet : collected) {
+				result.add(new Tuple2<IntArray, Integer>(candidateLookup.get(largeItemSet._1), largeItemSet._2));
+			}
+		}
+		return result;
+	}
+
+	private static void printTrie(TrieNode node) {
+		if (node instanceof TrieLeaf) {
+			System.out.println("<" + ((TrieLeaf) node).value + ">");
+		} else {
+			InnerTrieNode innerNode = (InnerTrieNode) node;
+			System.out.println();
+			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
+				System.out.print(innerNode.edgeLabels[i] + ", ");
+			}
+			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
+				printTrie(innerNode.children[i]);
+			}
+			System.out.println();
+		}
 	}
 
 	private static void aprioriOnInts(String[] args, JavaSparkContext context) throws IOException {
@@ -252,7 +450,7 @@ public class Main {
 				firstRound = false;
 				transactionsMapped = transactions.flatMapToPair(singleItemsExtractor);
 			} else {
-				CandidateMatcherInt myCandidateMatcher = new CandidateMatcherInt(candidates);
+				CandidatesListMatcher myCandidateMatcher = new CandidatesListMatcher(candidates);
 				transactionsMapped = transactions.flatMapToPair(myCandidateMatcher);
 			}
 			JavaPairRDD<IntArray, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
@@ -265,7 +463,7 @@ public class Main {
 			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
 	}
-
+	
 	private static void aprioriOnStrings(String[] args, JavaSparkContext context) {
 		Function<String, List<String>> transactionParser = new Function<String, List<String>>() {
 			private static final long serialVersionUID = -4625524329716723997L;
@@ -348,7 +546,8 @@ public class Main {
 		JavaSparkContext context = new JavaSparkContext(sparkConf);
 
 		// aprioriOnStrings(args, context);
-		aprioriOnInts(args, context);
+		// aprioriOnInts(args, context);
+		aprioriOnIntsWithTrie(args, context);
 
 		context.close();
 	}

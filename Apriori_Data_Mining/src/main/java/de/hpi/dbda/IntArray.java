@@ -3,7 +3,7 @@ package de.hpi.dbda;
 import java.io.Serializable;
 import java.util.Arrays;
 
-public class IntArray implements Serializable {
+public class IntArray implements Serializable, Comparable<IntArray> {
 	private static final long serialVersionUID = 9178408728199032638L;
 
 	public int[] value;
@@ -33,4 +33,21 @@ public class IntArray implements Serializable {
 	public int hashCode() {
 		return Arrays.hashCode(this.value);
 	}
+
+	// this leads to a lexicographic ordering:
+	public int compareTo(IntArray other) {
+		if (other == null) {
+			throw new NullPointerException();
+		}
+
+		int difference;
+		for (int i = 0; i < this.value.length && i < other.value.length; i++) {
+			difference = this.value[i] - other.value[i];
+			if (difference != 0) {
+				return difference;
+			}
+		}
+		return this.value.length - other.value.length;
+	}
+
 }

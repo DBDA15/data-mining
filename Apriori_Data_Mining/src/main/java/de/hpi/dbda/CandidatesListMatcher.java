@@ -7,11 +7,11 @@ import org.apache.spark.api.java.function.PairFlatMapFunction;
 
 import scala.Tuple2;
 
-public class CandidateMatcherInt implements PairFlatMapFunction<IntArray, IntArray, Integer> {
+public class CandidatesListMatcher implements PairFlatMapFunction<IntArray, IntArray, Integer> {
 	private static final long serialVersionUID = -7181647483073087875L;
 	Set<IntArray> candidates;
 
-	public CandidateMatcherInt(Set<IntArray> candidates) {
+	public CandidatesListMatcher(Set<IntArray> candidates) {
 		this.candidates = candidates;
 	}
 
