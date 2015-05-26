@@ -176,12 +176,17 @@ public class FPC {
 			if (!secondRound) {
 				Set<IntArray> candidates1 = generateCandidatesInt(candidates);
 				Set<IntArray> candidates2 = generateCandidatesInt(candidates1);
+				System.out.print("cand size: " + candidates.size() + "; ");
+				System.out.print("cand1 size: " + candidates1.size() + "; ");
+				System.out.println("cand2 size: " + candidates2.size() + "; ");
 				candidates.addAll(candidates1);
 				candidates.addAll(candidates2);
 			}
+			System.out.println("cand size after: " + candidates.size() + "; ");
 			largeItemss.addAll(candidates);
 			if (candidates.size() > 0) {
 				trie = Main.candidatesToTrie(candidates);
+				Main.printTrie(trie);
 			}
 			secondRound = firstRound;
 			firstRound = false;

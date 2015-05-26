@@ -26,8 +26,6 @@ import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
 
 import de.hpi.dbda.trie.InnerTrieNode;
-import de.hpi.dbda.trie.TrieLeaf;
-import de.hpi.dbda.trie.TrieNode;
 import de.hpi.dbda.test;
 import de.hpi.dbda.FPC;
 import scala.Tuple2;
@@ -58,11 +56,16 @@ public class Main {
 		HashSet<Integer> a = (HashSet<Integer>) f.clone();
 		a.addAll(l);
 		double confidence = 0;
+		//CHANGE IF FPC - !FPC.allSupport.containsKey(a)
 		if (!FPC.allSupport.containsKey(a)) {
-			//System.out.println("a not in");
+		//if (!allSupport.containsKey(a)) {
+		
+		//CHANGE IF FPC - !FPC.allSupport.containsKey(f)
+		//} else if (!allSupport.containsKey(f)) {
 		} else if (!FPC.allSupport.containsKey(f)) {
-			//System.out.println("f not in");
 		} else {
+			//CHANGE IF FPC - (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f)
+			//confidence = (double)allSupport.get(a) / (double)allSupport.get(f);
 			confidence = (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f);
 		}
 		//if (confidence > minconf) System.out.println(confidence);
@@ -215,8 +218,10 @@ public class Main {
 	private static ArrayList<IntArray> candidateLookup = null;
 	//TODO was private
 	public static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
+		
 		TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
-		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length];
+		//TODO length +2 hard coded, may be fixed with DPC
+		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length+2];
 		candidateLookup = new ArrayList<IntArray>(sortedCandidates);
 
 		// for every candidate, find the smallest index at which it differs from the previous candidate
@@ -239,12 +244,12 @@ public class Main {
 			candidateIndex++;
 			previousCandidate = candidate;
 		}
-
+		
 		// create a trie containing the nodes for the first candidate only
 		for (int level = 0; level < sortedCandidates.iterator().next().value.length; level++) {
 			int childCount = countChildren(firstDifferentElementIndices, 0, level);
 
-			InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new TrieNode[childCount]);
+			InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new InnerTrieNode[childCount]);
 			if (level != 0) {
 				currentTriePath[level - 1].edgeLabels[0] = sortedCandidates.iterator().next().value[level - 1];
 				currentTriePath[level - 1].children[0] = newNode;
@@ -256,19 +261,28 @@ public class Main {
 		for (IntArray candidate : sortedCandidates) {
 			// find the leftmost child slot that doesn't contain any data
 			int childIndex;
+			int entryLevel = firstDifferentElementIndices[candidateIndex] + 1; //Entry level for for-loop if anchorNode == null
 			InnerTrieNode anchorNode = currentTriePath[firstDifferentElementIndices[candidateIndex]];
-			for (childIndex = anchorNode.children.length - 1; anchorNode.children[childIndex] == null && childIndex > 0; childIndex--) {
-				// nothing to do here - the whole logic is in the loop header
+			if (anchorNode != null) {
+				for (childIndex = anchorNode.children.length - 1; 
+					 anchorNode.children[childIndex] == null && childIndex > 0;
+					 childIndex--) {
+					// nothing to do here - the whole logic is in the loop header
+				}
+				if (anchorNode.children[childIndex] != null) {
+					childIndex++;
+				}
+			} else {
+				childIndex = 0;
+				entryLevel -= 1;
 			}
-			if (anchorNode.children[childIndex] != null) {
-				childIndex++;
-			}
+					
 
 			// create the new InnerTrieNodes that are needed for candidate
-			for (int level = firstDifferentElementIndices[candidateIndex] + 1; level < candidate.value.length; level++) {
+			for (int level = entryLevel; level < candidate.value.length; level++) {
 				int childCount = countChildren(firstDifferentElementIndices, candidateIndex, level);
 
-				InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new TrieNode[childCount]);
+				InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new InnerTrieNode[childCount]);
 				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
 				currentTriePath[level - 1].children[childIndex] = newNode;
 				currentTriePath[level] = newNode;
@@ -277,10 +291,20 @@ public class Main {
 
 			// create the TrieLeaf for candidate
 			int level = candidate.value.length;
-			TrieLeaf newNode = new TrieLeaf(candidateIndex);
-			currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
-			currentTriePath[level - 1].children[childIndex] = newNode;
-
+			int newNodeIndex = -1;
+			for (int edge = 0; edge < currentTriePath[level-1].edgeLabels.length; edge++) {
+				if (currentTriePath[level-1].edgeLabels[edge] == candidate.value[level - 1]) {
+					newNodeIndex = edge;
+					break;
+				}
+			}
+			if (newNodeIndex == -1) {
+				InnerTrieNode newNode = new InnerTrieNode(candidateIndex);
+				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
+				currentTriePath[level - 1].children[childIndex] = newNode;
+			} else {
+				currentTriePath[level - 1].children[newNodeIndex].candidateID = candidateIndex;
+			}
 			candidateIndex++;
 		}
 
@@ -291,7 +315,9 @@ public class Main {
 		int childCount = 1;
 		for (int i = currentCandidateIndex + 1; i < firstDifferentElementIndices.length; i++) {
 			if (firstDifferentElementIndices[i] == level) {
-				childCount++;
+				if (candidateLookup.get(i).value.length > level) {
+					childCount++;
+				}
 			} else if (firstDifferentElementIndices[i] < level) {
 				break;
 			}
@@ -449,14 +475,14 @@ public class Main {
 		return result;
 	}
 
-	private static void printTrie(TrieNode node) {
-		if (node instanceof TrieLeaf) {
-			System.out.println("<" + ((TrieLeaf) node).value + ">");
+	public static void printTrie(InnerTrieNode node) {
+		if (node.candidateID != -1) {
+			System.out.println("<" + candidateLookup.get((node).candidateID).printDecoded(compressionMapping) + ">");
 		} else {
 			InnerTrieNode innerNode = (InnerTrieNode) node;
 			System.out.println();
 			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
-				System.out.print(innerNode.edgeLabels[i] + ", ");
+				System.out.print(compressionMapping.get(innerNode.edgeLabels[i]) + ", ");
 			}
 			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
 				printTrie(innerNode.children[i]);
@@ -630,6 +656,8 @@ public class Main {
 		FPC.fpcOnIntsWithTrie(args, context);
 		
 		ArrayList<AssociationRule> ar = new ArrayList<AssociationRule>();
+		//CHANGE IF FPC - IntArray candidate : FPC.largeItemss
+		//for (IntArray candidate : largeItems) {
 		for (IntArray candidate : FPC.largeItemss) {
 			HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
 			pow.remove(new HashSet<Integer>());

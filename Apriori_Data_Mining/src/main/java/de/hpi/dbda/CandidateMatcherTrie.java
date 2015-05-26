@@ -6,8 +6,6 @@ import org.apache.spark.api.java.function.PairFlatMapFunction;
 
 import scala.Tuple2;
 import de.hpi.dbda.trie.InnerTrieNode;
-import de.hpi.dbda.trie.TrieLeaf;
-import de.hpi.dbda.trie.TrieNode;
 
 public class CandidateMatcherTrie implements PairFlatMapFunction<IntArray, Integer, Integer> {
 	private static final long serialVersionUID = -5812427046006186493L;
@@ -35,12 +33,16 @@ public class CandidateMatcherTrie implements PairFlatMapFunction<IntArray, Integ
 			}
 
 			if (transaction[processedElements] == trieNode.edgeLabels[labelIndex]) {
-				TrieNode childNode = trieNode.children[labelIndex];
-				if (childNode instanceof TrieLeaf) {
-					resultSet.add(new Tuple2<Integer, Integer>(((TrieLeaf) childNode).value, 1));
-				} else {
-					if (processedElements + 1 < transaction.length) { // At least one more transaction element must be matched against the trie. If no transaction element is left, this is impossible.
-						traverseTrie(transaction, processedElements + 1, (InnerTrieNode) childNode, resultSet);
+				InnerTrieNode childNode = trieNode.children[labelIndex];
+				if (childNode.candidateID != -1) {
+					resultSet.add(new Tuple2<Integer, Integer>(childNode.candidateID, 1));
+				}
+				if (childNode.children != null) {
+					// At least one more transaction element must be matched against the trie. 
+					// If no transaction element is left, this is impossible.
+					if (processedElements + 1 < transaction.length) { 
+						traverseTrie(transaction, processedElements + 1,
+									 (InnerTrieNode) childNode, resultSet);
 					}
 				}
 			}

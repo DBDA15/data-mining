@@ -4,6 +4,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Map;
 
 public class IntArray implements Serializable, Comparable<IntArray> {
 	private static final long serialVersionUID = 9178408728199032638L;
@@ -57,6 +58,15 @@ public class IntArray implements Serializable, Comparable<IntArray> {
 			System.out.print(i);
 			System.out.print(" ");
 		}
+	}
+	
+	public String printDecoded(Map<Integer, String> map) {
+		String s = "";
+		for (int i : value) {
+			s += map.get(i);
+			s += " ";
+		}
+		return s;
 	}
 	
 	public int length() {
