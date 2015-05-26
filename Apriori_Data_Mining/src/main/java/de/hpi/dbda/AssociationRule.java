@@ -16,5 +16,9 @@ public class AssociationRule {
 	public void print() {
 		System.out.println(first.toString()+"=>"+last.toString());
 	}
+	
+	public String getPrintVersion() {
+		return first.toString()+"=>"+last.toString()+"\n";
+	}
 
 }

@@ -2,7 +2,10 @@ package de.hpi.dbda;
 
 import java.io.BufferedReader;
 
+import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,6 +29,7 @@ import de.hpi.dbda.trie.InnerTrieNode;
 import de.hpi.dbda.trie.TrieLeaf;
 import de.hpi.dbda.trie.TrieNode;
 import de.hpi.dbda.test;
+import de.hpi.dbda.FPC;
 import scala.Tuple2;
 
 
@@ -54,31 +58,36 @@ public class Main {
 		HashSet<Integer> a = (HashSet<Integer>) f.clone();
 		a.addAll(l);
 		double confidence = 0;
-		if (!allSupport.containsKey(a)) {
+		if (!FPC.allSupport.containsKey(a)) {
 			//System.out.println("a not in");
-		} else if (!allSupport.containsKey(f)) {
+		} else if (!FPC.allSupport.containsKey(f)) {
 			//System.out.println("f not in");
 		} else {
-			confidence = (double)allSupport.get(a) / (double)allSupport.get(f);
+			confidence = (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f);
 		}
 		//if (confidence > minconf) System.out.println(confidence);
 		return confidence > minconf;
 	}
 	
-	public static void printAssociationRule(AssociationRule ar){
+	public static String printAssociationRule(AssociationRule ar){
+		String al = "";
 		Set<Integer> f = ar.first;
 		Set<Integer> l = ar.last;
 		for (Integer i : f) {
-			System.out.print(compressionMapping.get(i));
-			System.out.print(", ");
+			al += compressionMapping.get(i) + ", ";
+			//System.out.print(compressionMapping.get(i));
+			//System.out.print(", ");
 		}
-		System.out.print(" => ");
+		al += " => ";
+		//System.out.print(" => ");
 		for (Integer i : l) {
-			System.out.print(compressionMapping.get(i));
-			System.out.print(", ");
+			al += compressionMapping.get(i) + ", ";
+			//System.out.print(compressionMapping.get(i));
+			//System.out.print(", ");
 		}
-
-		System.out.println();
+		al += "\n";
+		return al;
+		//System.out.println();
 	}
 	
 
@@ -204,8 +213,8 @@ public class Main {
 	}
 
 	private static ArrayList<IntArray> candidateLookup = null;
-
-	private static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
+	//TODO was private
+	public static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
 		TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
 		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length];
 		candidateLookup = new ArrayList<IntArray>(sortedCandidates);
@@ -217,7 +226,10 @@ public class Main {
 		int candidateIndex = 0;
 		for (IntArray candidate : sortedCandidates) {
 			if (previousCandidate != null) {
-				for (int i = 0; i < candidate.value.length; i++) {
+				//TODO check if it is right
+				firstDifferentElementIndices[candidateIndex] = Math.min(candidate.value.length, 
+																		previousCandidate.value.length);
+				for (int i = 0; i < Math.min(candidate.value.length, previousCandidate.value.length); i++) {
 					if (candidate.value[i] != previousCandidate.value[i]) {
 						firstDifferentElementIndices[candidateIndex] = i;
 						break;
@@ -287,7 +299,8 @@ public class Main {
 		return childCount;
 	}
 
-	private static List<IntArray> intCompressInputFile(String inputPath) throws IOException {
+	//TODO was private
+	public static List<IntArray> intCompressInputFile(String inputPath) throws IOException {
 		Map<String, Integer> compressionMap = new HashMap<String, Integer>();
 		BufferedReader reader = new BufferedReader(new FileReader(inputPath));
 		String line;
@@ -421,7 +434,8 @@ public class Main {
 		} while (candidates.size() > 0);
 	}
 
-	private static List<Tuple2<IntArray, Integer>> spellOutLargeItems(List<Tuple2<Integer, Integer>> collected, boolean firstRound) {
+	//TODO was private
+	public static List<Tuple2<IntArray, Integer>> spellOutLargeItems(List<Tuple2<Integer, Integer>> collected, boolean firstRound) {
 		ArrayList<Tuple2<IntArray, Integer>> result = new ArrayList<Tuple2<IntArray, Integer>>(collected.size());
 		if (firstRound) {
 			for (Tuple2<Integer, Integer> largeItemSet : collected) {
@@ -612,9 +626,11 @@ public class Main {
 
 		// aprioriOnStrings(args, context);
 		// aprioriOnInts(args, context);
-		aprioriOnIntsWithTrie(args, context);
+		//aprioriOnIntsWithTrie(args, context);
+		FPC.fpcOnIntsWithTrie(args, context);
+		
 		ArrayList<AssociationRule> ar = new ArrayList<AssociationRule>();
-		for (IntArray candidate : largeItems) {
+		for (IntArray candidate : FPC.largeItemss) {
 			HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
 			pow.remove(new HashSet<Integer>());
 			pow.remove(candidate.valueSet());
@@ -629,7 +645,20 @@ public class Main {
 				}
 			}
 		}
+		File file = new File("ar.txt");
+		 
+		// if file doesnt exists, then create it
+		if (!file.exists()) {
+			file.createNewFile();
+		}
 
+		FileWriter fw = new FileWriter(file.getAbsoluteFile());
+		BufferedWriter bw = new BufferedWriter(fw);
+		for (AssociationRule arule : ar) {
+			bw.write(printAssociationRule(arule));
+		}
+		bw.close();
+		
 		context.close();
 	}
 }
