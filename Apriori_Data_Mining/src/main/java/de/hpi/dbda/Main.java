@@ -1,6 +1,7 @@
 package de.hpi.dbda;
 
 import java.io.BufferedReader;
+
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -24,9 +25,16 @@ import org.apache.spark.api.java.function.PairFlatMapFunction;
 import de.hpi.dbda.trie.InnerTrieNode;
 import de.hpi.dbda.trie.TrieLeaf;
 import de.hpi.dbda.trie.TrieNode;
+import de.hpi.dbda.test;
 import scala.Tuple2;
 
+
 public class Main {
+	
+	public static Map<Integer, String> compressionMapping = new HashMap<Integer, String>();
+	public static Set<IntArray> largeItems = new HashSet<IntArray>();
+	public static HashMap<Set<Integer>,Integer> allSupport = new HashMap<Set<Integer>, Integer>();
+	public static double minconf = 0.75;
 
 	public static boolean compareLists(List<String> l1, List<String> l2) {
 		// TODO implement as Hashset @Mascha
@@ -39,6 +47,40 @@ public class Main {
 		}
 		return true;
 	}
+	
+	public static boolean checkARConfidence(AssociationRule ar) {
+		HashSet<Integer> f = ar.first;
+		HashSet<Integer> l = ar.last;
+		HashSet<Integer> a = (HashSet<Integer>) f.clone();
+		a.addAll(l);
+		double confidence = 0;
+		if (!allSupport.containsKey(a)) {
+			//System.out.println("a not in");
+		} else if (!allSupport.containsKey(f)) {
+			//System.out.println("f not in");
+		} else {
+			confidence = (double)allSupport.get(a) / (double)allSupport.get(f);
+		}
+		//if (confidence > minconf) System.out.println(confidence);
+		return confidence > minconf;
+	}
+	
+	public static void printAssociationRule(AssociationRule ar){
+		Set<Integer> f = ar.first;
+		Set<Integer> l = ar.last;
+		for (Integer i : f) {
+			System.out.print(compressionMapping.get(i));
+			System.out.print(", ");
+		}
+		System.out.print(" => ");
+		for (Integer i : l) {
+			System.out.print(compressionMapping.get(i));
+			System.out.print(", ");
+		}
+
+		System.out.println();
+	}
+	
 
 	public static Set<List<String>> generateCandidates(List<Tuple2<List<String>, Integer>> largeItemTuples) {
 		Set<List<String>> largeItems = new HashSet<List<String>>(largeItemTuples.size());
@@ -255,11 +297,12 @@ public class Main {
 			words = line.split(" ");
 			for (String myWord : words) {
 				compressionMap.put(myWord, compressionOutput);
+				compressionMapping.put(compressionOutput, myWord);
 				compressionOutput++;
 			}
 		}
 		reader.close();
-
+		
 		reader = new BufferedReader(new FileReader(inputPath));
 		ArrayList<IntArray> compressedFile = new ArrayList<IntArray>();
 		int[] compressedLine;
@@ -314,6 +357,9 @@ public class Main {
 			private static final int minSupport = 1000;
 
 			public Boolean call(Tuple2<Integer, Integer> input) throws Exception {
+				if (input._2 >= minSupport) {
+					System.out.println(input._2);
+				}
 				return input._2 >= minSupport;
 			}
 		};
@@ -342,16 +388,35 @@ public class Main {
 				transactionsMapped = transactions.flatMapToPair(myCandidateMatcher);
 			}
 			JavaPairRDD<Integer, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
+			List<Tuple2<Integer, Integer>> collectedItems = reducedTransactions.collect();
+			
+			//count confidence
+			List<Tuple2<IntArray, Integer>> collectedItemSets = spellOutLargeItems(collectedItems, firstRound);
+			for (Tuple2<IntArray, Integer> tuple : collectedItemSets) {
+				allSupport.put(tuple._1.valueSet(), tuple._2);
+			}
+			
 			JavaPairRDD<Integer, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
 			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
 			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
 			startTime = System.currentTimeMillis();
-			candidates = generateCandidatesInt(spellOutLargeItems(collected, firstRound));
+			List<Tuple2<IntArray, Integer>> largeItemSets= spellOutLargeItems(collected, firstRound);
+			candidates = generateCandidatesInt(largeItemSets);
+			largeItems.addAll(candidates);
 			if (candidates.size() > 0) {
 				trie = candidatesToTrie(candidates);
 			}
 			firstRound = false;
+			
+			for (IntArray i : candidates) {
+				for (int j = 0; j < i.length(); j++) {
+					System.out.print(compressionMapping.get(i.value[j]));
+					System.out.print(" ");
+				}
+				System.out.print("; ");
+			}
+			System.out.println("");
 			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
 	}
@@ -422,7 +487,7 @@ public class Main {
 
 		Function<Tuple2<IntArray, Integer>, Boolean> minSupportFilter = new Function<Tuple2<IntArray, Integer>, Boolean>() {
 			private static final long serialVersionUID = 1188423613305352530L;
-			private static final int minSupport = 1000;
+			private static final int minSupport = 10000;
 
 			public Boolean call(Tuple2<IntArray, Integer> input) throws Exception {
 				return input._2 >= minSupport;
@@ -548,6 +613,22 @@ public class Main {
 		// aprioriOnStrings(args, context);
 		// aprioriOnInts(args, context);
 		aprioriOnIntsWithTrie(args, context);
+		ArrayList<AssociationRule> ar = new ArrayList<AssociationRule>();
+		for (IntArray candidate : largeItems) {
+			HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
+			pow.remove(new HashSet<Integer>());
+			pow.remove(candidate.valueSet());
+			
+			for (HashSet<Integer> s : pow) {
+				HashSet<Integer> o = candidate.valueSet();
+				o.removeAll(s);
+				AssociationRule asr = new AssociationRule(s, o);
+				if (checkARConfidence(asr)) {
+					printAssociationRule(asr);
+					ar.add(asr);
+				}
+			}
+		}
 
 		context.close();
 	}

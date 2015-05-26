@@ -1,7 +1,9 @@
 package de.hpi.dbda;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 
 public class IntArray implements Serializable, Comparable<IntArray> {
 	private static final long serialVersionUID = 9178408728199032638L;
@@ -48,6 +50,37 @@ public class IntArray implements Serializable, Comparable<IntArray> {
 			}
 		}
 		return this.value.length - other.value.length;
+	}
+	
+	public void print() {
+		for (int i : value) {
+			System.out.print(i);
+			System.out.print(" ");
+		}
+	}
+	
+	public int length() {
+		return value.length;
+	}
+	
+	public Integer head() {
+		return value[0];
+	}
+	
+	public IntArray rest() {
+		return new IntArray(Arrays.copyOfRange(value, 1, value.length));
+	}
+	
+	public IntArray clone() {
+		return new IntArray(value);
+	}
+	
+	public HashSet<Integer> valueSet() {
+		HashSet<Integer> n = new HashSet<Integer>();
+		for (int i : value) {
+			n.add(i);
+		}
+		return n;
 	}
 
 }
