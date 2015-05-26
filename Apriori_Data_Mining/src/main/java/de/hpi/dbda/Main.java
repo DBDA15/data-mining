@@ -221,7 +221,7 @@ public class Main {
 		
 		TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
 		//TODO length +2 hard coded, may be fixed with DPC
-		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length+2];
+		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length+3];
 		candidateLookup = new ArrayList<IntArray>(sortedCandidates);
 
 		// for every candidate, find the smallest index at which it differs from the previous candidate
@@ -299,15 +299,23 @@ public class Main {
 				}
 			}
 			if (newNodeIndex == -1) {
-				InnerTrieNode newNode = new InnerTrieNode(candidateIndex);
+				int childrenCount =  countChildren(firstDifferentElementIndices,candidateIndex, candidate.length());
+				InnerTrieNode newNode = new InnerTrieNode(candidateIndex, new int[childrenCount], new InnerTrieNode[childrenCount]);
+				currentTriePath[level]=newNode;
 				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
+				if (currentTriePath[level - 1].children[childIndex] != null) System.out.println("###############Überschreiben");
 				currentTriePath[level - 1].children[childIndex] = newNode;
 			} else {
 				currentTriePath[level - 1].children[newNodeIndex].candidateID = candidateIndex;
 			}
 			candidateIndex++;
+			if (candidate.value.length > 3) {
+				System.out.println("###############");
+				printTrie(currentTriePath[0]);
+				System.out.println("###############");
+			}
 		}
-
+		
 		return currentTriePath[0];
 	}
 
@@ -476,6 +484,10 @@ public class Main {
 	}
 
 	public static void printTrie(InnerTrieNode node) {
+		if (node == null) {
+			System.out.println("null");
+			return;
+		}
 		if (node.candidateID != -1) {
 			System.out.println("<" + candidateLookup.get((node).candidateID).printDecoded(compressionMapping) + ">");
 		} else {

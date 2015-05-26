@@ -12,9 +12,9 @@ public class InnerTrieNode implements Serializable{
 		this.edgeLabels = edgeLabels;
 		this.children = children;
 	}
-	public InnerTrieNode(int index) {
-		this.edgeLabels = null;
-		this.children = null;
+	public InnerTrieNode(int index, int[] edgeLabels, InnerTrieNode[] children) {
+		this.edgeLabels = edgeLabels;
+		this.children = children;
 		this.candidateID = index;
 	}
 }
