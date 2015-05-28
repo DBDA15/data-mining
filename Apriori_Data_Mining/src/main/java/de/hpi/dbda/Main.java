@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -17,6 +18,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -57,18 +61,17 @@ public class Main {
 		a.addAll(l);
 		double confidence = 0;
 		//CHANGE IF FPC - !FPC.allSupport.containsKey(a)
-		if (!FPC.allSupport.containsKey(a)) {
-		//if (!allSupport.containsKey(a)) {
+		//if (!FPC.allSupport.containsKey(a)) {
+		if (!allSupport.containsKey(a)) {
 		
 		//CHANGE IF FPC - !FPC.allSupport.containsKey(f)
-		//} else if (!allSupport.containsKey(f)) {
-		} else if (!FPC.allSupport.containsKey(f)) {
+		} else if (!allSupport.containsKey(f)) {
+		//} else if (!FPC.allSupport.containsKey(f)) {
 		} else {
 			//CHANGE IF FPC - (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f)
-			//confidence = (double)allSupport.get(a) / (double)allSupport.get(f);
-			confidence = (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f);
+			confidence = (double)allSupport.get(a) / (double)allSupport.get(f);
+			//confidence = (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f);
 		}
-		//if (confidence > minconf) System.out.println(confidence);
 		return confidence > minconf;
 	}
 	
@@ -78,19 +81,13 @@ public class Main {
 		Set<Integer> l = ar.last;
 		for (Integer i : f) {
 			al += compressionMapping.get(i) + ", ";
-			//System.out.print(compressionMapping.get(i));
-			//System.out.print(", ");
 		}
 		al += " => ";
-		//System.out.print(" => ");
 		for (Integer i : l) {
 			al += compressionMapping.get(i) + ", ";
-			//System.out.print(compressionMapping.get(i));
-			//System.out.print(", ");
 		}
 		al += "\n";
 		return al;
-		//System.out.println();
 	}
 	
 
@@ -303,17 +300,11 @@ public class Main {
 				InnerTrieNode newNode = new InnerTrieNode(candidateIndex, new int[childrenCount], new InnerTrieNode[childrenCount]);
 				currentTriePath[level]=newNode;
 				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
-				if (currentTriePath[level - 1].children[childIndex] != null) System.out.println("###############Überschreiben");
 				currentTriePath[level - 1].children[childIndex] = newNode;
 			} else {
 				currentTriePath[level - 1].children[newNodeIndex].candidateID = candidateIndex;
 			}
 			candidateIndex++;
-			if (candidate.value.length > 3) {
-				System.out.println("###############");
-				printTrie(currentTriePath[0]);
-				System.out.println("###############");
-			}
 		}
 		
 		return currentTriePath[0];
@@ -336,7 +327,12 @@ public class Main {
 	//TODO was private
 	public static List<IntArray> intCompressInputFile(String inputPath) throws IOException {
 		Map<String, Integer> compressionMap = new HashMap<String, Integer>();
-		BufferedReader reader = new BufferedReader(new FileReader(inputPath));
+		Path pt = new Path(inputPath);
+		Configuration conf = new Configuration();
+		conf.set("fs.default.name", "hdfs://tenemhead2:8020");
+		conf.addResource(pt);
+		FileSystem fs = FileSystem.get(conf);
+		BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(pt)));
 		String line;
 		String[] words;
 		int compressionOutput = Integer.MIN_VALUE;
@@ -404,9 +400,6 @@ public class Main {
 			private static final int minSupport = 1000;
 
 			public Boolean call(Tuple2<Integer, Integer> input) throws Exception {
-				if (input._2 >= minSupport) {
-					System.out.println(input._2);
-				}
 				return input._2 >= minSupport;
 			}
 		};
@@ -456,14 +449,14 @@ public class Main {
 			}
 			firstRound = false;
 			
-			for (IntArray i : candidates) {
+			/*for (IntArray i : candidates) {
 				for (int j = 0; j < i.length(); j++) {
 					System.out.print(compressionMapping.get(i.value[j]));
 					System.out.print(" ");
 				}
 				System.out.print("; ");
 			}
-			System.out.println("");
+			System.out.println("");*/
 			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
 	}
@@ -654,51 +647,66 @@ public class Main {
 
 	public static void main(String[] args) throws IOException {
 
-		if (args.length < 2) {
-			System.out.println("please provide the following parameters: input_path and result_file_path");
-			System.exit(0);
-		}
+        if (args.length < 3) {
+            System.out.println("please provide the following parameters: input_path, result_file_path and the modus");
+            System.exit(0);
+        }
 
-		SparkConf sparkConf = new SparkConf().setAppName(Main.class.getName()).set("spark.hadoop.validateOutputSpecs", "false");
-		JavaSparkContext context = new JavaSparkContext(sparkConf);
+        SparkConf sparkConf = new SparkConf().setAppName(Main.class.getName()).set("spark.hadoop.validateOutputSpecs", "false");
+        JavaSparkContext context = new JavaSparkContext(sparkConf);
 
-		// aprioriOnStrings(args, context);
-		// aprioriOnInts(args, context);
-		//aprioriOnIntsWithTrie(args, context);
-		FPC.fpcOnIntsWithTrie(args, context);
-		
-		ArrayList<AssociationRule> ar = new ArrayList<AssociationRule>();
-		//CHANGE IF FPC - IntArray candidate : FPC.largeItemss
-		//for (IntArray candidate : largeItems) {
-		for (IntArray candidate : FPC.largeItemss) {
-			HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
-			pow.remove(new HashSet<Integer>());
-			pow.remove(candidate.valueSet());
-			
-			for (HashSet<Integer> s : pow) {
-				HashSet<Integer> o = candidate.valueSet();
-				o.removeAll(s);
-				AssociationRule asr = new AssociationRule(s, o);
-				if (checkARConfidence(asr)) {
-					printAssociationRule(asr);
-					ar.add(asr);
-				}
-			}
-		}
-		File file = new File("ar.txt");
-		 
-		// if file doesnt exists, then create it
-		if (!file.exists()) {
-			file.createNewFile();
-		}
+        switch(args[2]) {
+            case "strings":
+            aprioriOnStrings(args, context);
+            break;
+            case "ints":
+            aprioriOnInts(args, context);
+            break;
+            case "trie":
+            aprioriOnIntsWithTrie(args, context);
+            break;
+            case "fpc":
+            FPC.fpcOnIntsWithTrie(args, context);
+            Main.allSupport = FPC.allSupport;
+            Main.largeItems = FPC.largeItemss;
+            break;
+            default:
+            System.out.println("unknown mode");
+            break;
+        }
+       
+        ArrayList<AssociationRule> ar = new ArrayList<AssociationRule>();
+        //CHANGE IF FPC - IntArray candidate : FPC.largeItemss
+        //for (IntArray candidate : largeItems) {
+        for (IntArray candidate : largeItems) {
+            HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
+            pow.remove(new HashSet<Integer>());
+            pow.remove(candidate.valueSet());
+           
+            for (HashSet<Integer> s : pow) {
+                HashSet<Integer> o = candidate.valueSet();
+                o.removeAll(s);
+                AssociationRule asr = new AssociationRule(s, o);
+                if (checkARConfidence(asr)) {
+                    printAssociationRule(asr);
+                    ar.add(asr);
+                }
+            }
+        }
+        File file = new File(args[1]);
+         
+        // if file doesnt exists, then create it
+        if (!file.exists()) {
+            file.createNewFile();
+        }
 
-		FileWriter fw = new FileWriter(file.getAbsoluteFile());
-		BufferedWriter bw = new BufferedWriter(fw);
-		for (AssociationRule arule : ar) {
-			bw.write(printAssociationRule(arule));
-		}
-		bw.close();
-		
-		context.close();
-	}
+        FileWriter fw = new FileWriter(file.getAbsoluteFile());
+        BufferedWriter bw = new BufferedWriter(fw);
+        for (AssociationRule arule : ar) {
+            bw.write(printAssociationRule(arule));
+        }
+        bw.close();
+       
+        context.close();
+    }
 }
