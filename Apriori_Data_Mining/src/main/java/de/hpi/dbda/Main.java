@@ -1,7 +1,6 @@
 package de.hpi.dbda;
 
 import java.io.BufferedReader;
-
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
@@ -38,9 +37,11 @@ import scala.Tuple2;
 public class Main {
 	
 	public static Map<Integer, String> compressionMapping = new HashMap<Integer, String>();
-	public static Set<IntArray> largeItems = new HashSet<IntArray>();
-	public static HashMap<Set<Integer>,Integer> allSupport = new HashMap<Set<Integer>, Integer>();
-	public static double minconf = 0.75;
+	public static Set largeItems = new HashSet();
+	public static HashMap<Set,Integer> allSupport = new HashMap<Set, Integer>();
+	public static double minConf;
+	public static int minSupport;
+	public static int minRating;
 
 	public static boolean compareLists(List<String> l1, List<String> l2) {
 		// TODO implement as Hashset @Mascha
@@ -54,37 +55,38 @@ public class Main {
 		return true;
 	}
 	
-	public static boolean checkARConfidence(AssociationRule ar) {
-		HashSet<Integer> f = ar.first;
-		HashSet<Integer> l = ar.last;
-		HashSet<Integer> a = (HashSet<Integer>) f.clone();
+	public static boolean checkARConfidenceAndSupport(AssociationRule ar) {
+		HashSet f = ar.first;
+		HashSet l = ar.last;
+		HashSet a = (HashSet) f.clone();
 		a.addAll(l);
 		double confidence = 0;
-		//CHANGE IF FPC - !FPC.allSupport.containsKey(a)
-		//if (!FPC.allSupport.containsKey(a)) {
 		if (!allSupport.containsKey(a)) {
-		
-		//CHANGE IF FPC - !FPC.allSupport.containsKey(f)
+
 		} else if (!allSupport.containsKey(f)) {
-		//} else if (!FPC.allSupport.containsKey(f)) {
 		} else {
-			//CHANGE IF FPC - (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f)
-			confidence = (double)allSupport.get(a) / (double)allSupport.get(f);
-			//confidence = (double)FPC.allSupport.get(a) / (double)FPC.allSupport.get(f);
+			confidence = (double) allSupport.get(a) / (double) allSupport.get(f);
+			if (allSupport.get(a) < minSupport) {
+				confidence = 0;
+			}
 		}
-		return confidence > minconf;
+		
+		return confidence > minConf;
 	}
 	
 	public static String printAssociationRule(AssociationRule ar){
 		String al = "";
-		Set<Integer> f = ar.first;
-		Set<Integer> l = ar.last;
-		for (Integer i : f) {
-			al += compressionMapping.get(i) + ", ";
+		Set f = ar.first;
+		Set l = ar.last;
+		String itemString;
+		for (Object i : f) {
+			itemString = (String) (i instanceof String ? i : compressionMapping.get(i));
+			al += itemString + ", ";
 		}
 		al += " => ";
-		for (Integer i : l) {
-			al += compressionMapping.get(i) + ", ";
+		for (Object i : l) {
+			itemString = (String) (i instanceof String ? i : compressionMapping.get(i));
+			al += itemString + ", ";
 		}
 		al += "\n";
 		return al;
@@ -326,37 +328,71 @@ public class Main {
 
 	//TODO was private
 	public static List<IntArray> intCompressInputFile(String inputPath) throws IOException {
+		final int LINES_PER_PRINT = 10000;
+		
 		Map<String, Integer> compressionMap = new HashMap<String, Integer>();
-		Path pt = new Path(inputPath);
-		Configuration conf = new Configuration();
-		conf.set("fs.default.name", "hdfs://tenemhead2:8020");
-		conf.addResource(pt);
-		FileSystem fs = FileSystem.get(conf);
-		BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(pt)));
+		
+		int lineCounter = 0;
+		InputStreamReader myInputStream;
+		FileSystem fs = null;
+		Path pt = null;
+		if (inputPath.startsWith("hdfs")) {
+			pt = new Path(inputPath);
+			Configuration conf = new Configuration();
+			conf.set("fs.default.name", "hdfs://tenemhead2:8020");
+			conf.addResource(pt);
+			fs = FileSystem.get(conf);
+			myInputStream = new InputStreamReader(fs.open(pt));
+		} else {
+			myInputStream = new FileReader(inputPath);
+		}
+
+		BufferedReader reader = new BufferedReader(myInputStream);
 		String line;
 		String[] words;
 		int compressionOutput = Integer.MIN_VALUE;
 		while ((line = reader.readLine()) != null) {
 			words = line.split(" ");
-			for (String myWord : words) {
-				compressionMap.put(myWord, compressionOutput);
-				compressionMapping.put(compressionOutput, myWord);
-				compressionOutput++;
+			if (words.length > 0 && Integer.parseInt(words[0]) >= minRating) {
+				for (String myWord : words) {
+					compressionMap.put(myWord, compressionOutput);
+					compressionMapping.put(compressionOutput, myWord);
+					compressionOutput++;
+				}
+			}
+			
+			lineCounter++;
+			if (lineCounter % LINES_PER_PRINT == 0) {
+				System.out.println("read " + lineCounter + " lines (1st read)");
 			}
 		}
 		reader.close();
 		
-		reader = new BufferedReader(new FileReader(inputPath));
+		lineCounter = 0;
+		if (inputPath.startsWith("hdfs")) {
+			myInputStream = new InputStreamReader(fs.open(pt));
+		} else {
+			myInputStream = new FileReader(inputPath);
+		}
+
+		reader = new BufferedReader(myInputStream);
 		ArrayList<IntArray> compressedFile = new ArrayList<IntArray>();
 		int[] compressedLine;
 		while ((line = reader.readLine()) != null) {
 			words = line.split(" ");
-			compressedLine = new int[words.length];
-			for (int i = 0; i < words.length; i++) {
-				compressionOutput = compressionMap.get(words[i]);
-				compressedLine[i] = compressionOutput;
+			if (words.length > 0 && Integer.parseInt(words[0]) >= minRating) {
+				compressedLine = new int[words.length];
+				for (int i = 0; i < words.length; i++) {
+					compressionOutput = compressionMap.get(words[i]);
+					compressedLine[i] = compressionOutput;
+				}
+				compressedFile.add(new IntArray(compressedLine));
 			}
-			compressedFile.add(new IntArray(compressedLine));
+
+			lineCounter++;
+			if (lineCounter % LINES_PER_PRINT == 0) {
+				System.out.println("read " + lineCounter + " lines (2nd read)");
+			}
 		}
 		reader.close();
 		return compressedFile;
@@ -395,14 +431,7 @@ public class Main {
 			}
 		};
 
-		Function<Tuple2<Integer, Integer>, Boolean> minSupportFilter = new Function<Tuple2<Integer, Integer>, Boolean>() {
-			private static final long serialVersionUID = 1188423613305352530L;
-			private static final int minSupport = 1000;
-
-			public Boolean call(Tuple2<Integer, Integer> input) throws Exception {
-				return input._2 >= minSupport;
-			}
-		};
+		Function<Tuple2<Integer, Integer>, Boolean> minSupportFilter = new MinSupportFilter<Integer>(minSupport);
 
 		boolean firstRound = true;
 		Set<IntArray> candidates = null;
@@ -428,16 +457,16 @@ public class Main {
 				transactionsMapped = transactions.flatMapToPair(myCandidateMatcher);
 			}
 			JavaPairRDD<Integer, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
-			List<Tuple2<Integer, Integer>> collectedItems = reducedTransactions.collect();
 			
+			JavaPairRDD<Integer, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
+			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
+
 			//count confidence
-			List<Tuple2<IntArray, Integer>> collectedItemSets = spellOutLargeItems(collectedItems, firstRound);
+			List<Tuple2<IntArray, Integer>> collectedItemSets = spellOutLargeItems(collected, firstRound);
 			for (Tuple2<IntArray, Integer> tuple : collectedItemSets) {
 				allSupport.put(tuple._1.valueSet(), tuple._2);
 			}
 			
-			JavaPairRDD<Integer, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
-			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
 			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
 			startTime = System.currentTimeMillis();
@@ -530,14 +559,7 @@ public class Main {
 			}
 		};
 
-		Function<Tuple2<IntArray, Integer>, Boolean> minSupportFilter = new Function<Tuple2<IntArray, Integer>, Boolean>() {
-			private static final long serialVersionUID = 1188423613305352530L;
-			private static final int minSupport = 10000;
-
-			public Boolean call(Tuple2<IntArray, Integer> input) throws Exception {
-				return input._2 >= minSupport;
-			}
-		};
+		Function<Tuple2<IntArray, Integer>, Boolean> minSupportFilter = new MinSupportFilter<IntArray>(Main.minSupport);
 
 		boolean firstRound = true;
 		Set<IntArray> candidates = null;
@@ -566,22 +588,34 @@ public class Main {
 			JavaPairRDD<IntArray, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
 			JavaPairRDD<IntArray, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
 			List<Tuple2<IntArray, Integer>> collected = filteredSupport.collect();
+
+			for (Tuple2<IntArray, Integer> tuple : collected) {
+				allSupport.put(tuple._1.valueSet(), tuple._2);
+			}
+			
 			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
 			startTime = System.currentTimeMillis();
 			candidates = generateCandidatesInt(collected);
+			largeItems.addAll(candidates);
 			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
 	}
 	
 	private static void aprioriOnStrings(String[] args, JavaSparkContext context) {
+		final int minRatingValue = Main.minRating;
 		Function<String, List<String>> transactionParser = new Function<String, List<String>>() {
 			private static final long serialVersionUID = -4625524329716723997L;
+			public int minRating = minRatingValue;
 
 			public List<String> call(String line) throws Exception {
 				String[] items = line.split(" ");
-				Arrays.sort(items);
-				return Arrays.asList(items);
+				if (items.length > 0 && Integer.parseInt(items[0]) >= Main.minRating) {
+					Arrays.sort(items);
+					return Arrays.asList(items);
+				} else {
+					return new ArrayList<String>(1);
+				}
 			}
 
 		};
@@ -610,14 +644,7 @@ public class Main {
 			}
 		};
 
-		Function<Tuple2<List<String>, Integer>, Boolean> minSupportFilter = new Function<Tuple2<List<String>, Integer>, Boolean>() {
-			private static final long serialVersionUID = 4372559437013933640L;
-			private static final int minSupport = 1000;
-
-			public Boolean call(Tuple2<List<String>, Integer> input) throws Exception {
-				return input._2 >= minSupport;
-			}
-		};
+		Function<Tuple2<List<String>, Integer>, Boolean> minSupportFilter = new MinSupportFilter<List<String>>(Main.minSupport);
 
 		boolean firstRound = true;
 		Set<List<String>> candidates = null;
@@ -637,20 +664,32 @@ public class Main {
 			JavaPairRDD<List<String>, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
 			JavaPairRDD<List<String>, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
 			List<Tuple2<List<String>, Integer>> collected = filteredSupport.collect();
+
+			for (Tuple2<List<String>, Integer> tuple : collected) {
+				allSupport.put(new HashSet<String>(tuple._1), tuple._2);
+			}
+
 			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
 			startTime = System.currentTimeMillis();
 			candidates = generateCandidates(collected);
+			largeItems.addAll(candidates);
 			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
 	}
 
 	public static void main(String[] args) throws IOException {
 
-        if (args.length < 3) {
-            System.out.println("please provide the following parameters: input_path, result_file_path and the modus");
+        if (args.length < 6) {
+            System.out.println("please provide the following parameters: input_path, result_file_path, modus, minSupport, minRating and minConfidence");
+            System.out.println("for example:");
+            System.out.println("./spark-submit --master spark://172.16.21.111:7077 --driver-memory 7g --conf spark.executor.memory=4g --class de.hpi.dbda.Main /home/martin.gebert/Apriori_Data_Mining-0.0.1-SNAPSHOT.jar hdfs://tenemhead2:8020/data/netflix.txt /home/martin.gebert/result.txt ints 8000 5 0.5");
             System.exit(0);
         }
+        
+		minSupport = Integer.parseInt(args[3]);
+		minRating = Integer.parseInt(args[4]);
+		minConf = Double.parseDouble(args[5]);
 
         SparkConf sparkConf = new SparkConf().setAppName(Main.class.getName()).set("spark.hadoop.validateOutputSpecs", "false");
         JavaSparkContext context = new JavaSparkContext(sparkConf);
@@ -678,21 +717,42 @@ public class Main {
         ArrayList<AssociationRule> ar = new ArrayList<AssociationRule>();
         //CHANGE IF FPC - IntArray candidate : FPC.largeItemss
         //for (IntArray candidate : largeItems) {
-        for (IntArray candidate : largeItems) {
-            HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
-            pow.remove(new HashSet<Integer>());
-            pow.remove(candidate.valueSet());
-           
-            for (HashSet<Integer> s : pow) {
-                HashSet<Integer> o = candidate.valueSet();
-                o.removeAll(s);
-                AssociationRule asr = new AssociationRule(s, o);
-                if (checkARConfidence(asr)) {
-                    printAssociationRule(asr);
-                    ar.add(asr);
-                }
-            }
-        }
+
+		if (largeItems.size() > 0 && largeItems.iterator().next() instanceof IntArray) {
+			for (IntArray candidate : (Set<IntArray>) largeItems) {
+				HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
+				pow.remove(new HashSet<Integer>());
+				pow.remove(candidate.valueSet());
+
+				for (HashSet<Integer> s : pow) {
+					HashSet<Integer> o = candidate.valueSet();
+					o.removeAll(s);
+					AssociationRule<Integer> asr = new AssociationRule<Integer>(s, o);
+					if (checkARConfidenceAndSupport(asr)) {
+						System.out.println(printAssociationRule(asr));
+						ar.add(asr);
+					}
+				}
+			}
+		}
+		else if (largeItems.size() > 0 && largeItems.iterator().next() instanceof List<?>) {
+			for (List<String> candidate : (Set<List<String>>) largeItems) {
+				HashSet<HashSet<String>> pow = test.powerSet(candidate);
+				pow.remove(new HashSet<String>());
+				pow.remove(new HashSet<String>(candidate));
+
+				for (HashSet<String> s : pow) {
+					HashSet<String> o = new HashSet<String>(candidate);
+					o.removeAll(s);
+					AssociationRule<String> asr = new AssociationRule<String>(s, o);
+					if (checkARConfidenceAndSupport(asr)) {
+						System.out.println(printAssociationRule(asr));
+						ar.add(asr);
+					}
+				}
+			}
+		}
+        
         File file = new File(args[1]);
          
         // if file doesnt exists, then create it

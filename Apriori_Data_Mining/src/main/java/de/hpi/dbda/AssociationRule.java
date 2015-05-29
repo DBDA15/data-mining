@@ -1,14 +1,13 @@
 package de.hpi.dbda;
 
 import java.util.HashSet;
-import java.util.Set;
 
-public class AssociationRule {
+public class AssociationRule<T> {
 
-	public HashSet<Integer> first;
-	public HashSet<Integer> last;
+	public HashSet<T> first;
+	public HashSet<T> last;
 	
-	public AssociationRule(HashSet<Integer> f, HashSet<Integer> l) {
+	public AssociationRule(HashSet<T> f, HashSet<T> l) {
 		first = f;
 		last = l;
 	}

@@ -22,7 +22,7 @@ import de.hpi.dbda.Main;
 public class FPC {
 	
 	public static Set<IntArray> largeItemss = new HashSet<IntArray>();
-	public static HashMap<Set<Integer>,Integer> allSupport = new HashMap<Set<Integer>, Integer>();
+	public static HashMap<Set,Integer> allSupport = new HashMap<Set, Integer>();
 
 	public static Set<IntArray> generateCandidatesInt(Set<IntArray> largeItems) {
 
@@ -107,17 +107,7 @@ public class FPC {
 			}
 		};
 
-		Function<Tuple2<Integer, Integer>, Boolean> minSupportFilter = new Function<Tuple2<Integer, Integer>, Boolean>() {
-			private static final long serialVersionUID = 1188423613305352530L;
-			private static final int minSupport = 1000;
-
-			public Boolean call(Tuple2<Integer, Integer> input) throws Exception {
-				if (input._2 >= minSupport) {
-					System.out.println(input._2);
-				}
-				return input._2 >= minSupport;
-			}
-		};
+		Function<Tuple2<Integer, Integer>, Boolean> minSupportFilter = new MinSupportFilter<Integer>(Main.minSupport);
 		
 		
 
@@ -152,16 +142,16 @@ public class FPC {
 				transactionsMapped = transactions.flatMapToPair(myCandidateMatcher);
 			}
 			JavaPairRDD<Integer, Integer> reducedTransactions = transactionsMapped.reduceByKey(reducer);
-			List<Tuple2<Integer, Integer>> collectedItems = reducedTransactions.collect();
 			
+			JavaPairRDD<Integer, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
+			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
+
 			//count confidence
-			List<Tuple2<IntArray, Integer>> collectedItemSets = Main.spellOutLargeItems(collectedItems, firstRound);
+			List<Tuple2<IntArray, Integer>> collectedItemSets = Main.spellOutLargeItems(collected, firstRound);
 			for (Tuple2<IntArray, Integer> tuple : collectedItemSets) {
 				allSupport.put(tuple._1.valueSet(), tuple._2);
 			}
 			
-			JavaPairRDD<Integer, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
-			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
 			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
 			startTime = System.currentTimeMillis();
@@ -176,17 +166,12 @@ public class FPC {
 			if (!secondRound) {
 				Set<IntArray> candidates1 = generateCandidatesInt(candidates);
 				Set<IntArray> candidates2 = generateCandidatesInt(candidates1);
-				System.out.print("cand size: " + candidates.size() + "; ");
-				System.out.print("cand1 size: " + candidates1.size() + "; ");
-				System.out.println("cand2 size: " + candidates2.size() + "; ");
 				candidates.addAll(candidates1);
 				candidates.addAll(candidates2);
 			}
-			System.out.println("cand size after: " + candidates.size() + "; ");
 			largeItemss.addAll(candidates);
 			if (candidates.size() > 0) {
 				trie = Main.candidatesToTrie(candidates);
-				Main.printTrie(trie);
 			}
 			secondRound = firstRound;
 			firstRound = false;

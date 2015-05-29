@@ -30,28 +30,24 @@ public class test {
         return sets;
     }
 	
-	public static void main(String[] args) {
-		int[] i = {1,2,3};
-		ArrayList<AssociationRule> ar = new ArrayList();
-		IntArray set = new IntArray(i);
-		
-		HashSet<HashSet<Integer>> pow = powerSet(set);
-		pow.remove(new HashSet<Integer>());
-		pow.remove(set.valueSet());
-		for (HashSet<Integer> s : pow) {
-			HashSet<Integer> o = set.valueSet();
-			o.removeAll(s);
-			AssociationRule asr = new AssociationRule(s, o);
-			ar.add(asr);
-			asr.print();
-		}
-		/*for (Set<Integer> s : pow) {
-			HashSet newSet = HashSet(set.value);
-			newSet.removeAll(s);
-			System.out.println(newSet.toString()+"=>"+s);
-
-		}*/
-
-	}
+	public static HashSet<HashSet<String>> powerSet(List<String> originalSet) {
+		HashSet<HashSet<String>> sets = new HashSet<HashSet<String>>();
+        if (originalSet.size() == 0) {
+            sets.add(new HashSet<String>());
+            return sets;
+        }
+        //List<Integer> list = new ArrayList<Integer>(originalSet);
+        String head = originalSet.get(0);
+        //Set<Integer> rest = new HashSet<Integer>(list.subList(1, list.size()));
+		List<String> rest = originalSet.size() > 1 ? originalSet.subList(1, originalSet.size()) : new ArrayList<String>(0);
+        for (HashSet<String> set : powerSet(rest)) {
+        	HashSet<String> newSet = new HashSet<String>();
+            newSet.add(head);
+            newSet.addAll(set);
+            sets.add(newSet);
+            sets.add(set);
+        }
+        return sets;
+    }
 
 }
