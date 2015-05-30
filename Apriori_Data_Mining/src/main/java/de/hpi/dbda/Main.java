@@ -80,12 +80,12 @@ public class Main {
 		Set l = ar.last;
 		String itemString;
 		for (Object i : f) {
-			itemString = (String) (i instanceof String ? i : compressionMapping.get(i));
+			itemString = (String) (i instanceof String ? i : i);
 			al += itemString + ", ";
 		}
 		al += " => ";
 		for (Object i : l) {
-			itemString = (String) (i instanceof String ? i : compressionMapping.get(i));
+			itemString = (String) (i instanceof String ? i : i);
 			al += itemString + ", ";
 		}
 		al += "\n";
@@ -131,19 +131,6 @@ public class Main {
 					if (keepCandidate) {
 						result.add(candidate);
 					}
-					/* TODO: ausprobieren
-					for(int ignoreIndex = 0; ignoreIndex < res.size() - 2; ignoreIndex++) {
-						ListPointer searchPointer = new ListPointer(res, ignoreIndex);
-						ArrayList<List<String>> valuesFromMap = (ArrayList<List<String>>) map.getCollection(searchPointer);
-						for(List<String> value:valuesFromMap){
-							for(int compareIndex = 0; compareIndex < value.size(); compareIndex++) {
-								if(value.get(compareIndex).equals(anObject))
-							}
-							
-						}
-					}
-					*/
-
 				}
 			}
 		}
@@ -194,19 +181,6 @@ public class Main {
 					if (keepCandidate) {
 						result.add(candidate);
 					}
-					/* TODO: ausprobieren
-					for(int ignoreIndex = 0; ignoreIndex < res.size() - 2; ignoreIndex++) {
-						ListPointer searchPointer = new ListPointer(res, ignoreIndex);
-						ArrayList<List<String>> valuesFromMap = (ArrayList<List<String>>) map.getCollection(searchPointer);
-						for(List<String> value:valuesFromMap){
-							for(int compareIndex = 0; compareIndex < value.size(); compareIndex++) {
-								if(value.get(compareIndex).equals(anObject))
-							}
-							
-						}
-					}
-					*/
-
 				}
 			}
 		}
@@ -399,12 +373,19 @@ public class Main {
 	}
 
 	private static void aprioriOnIntsWithTrie(String[] args, JavaSparkContext context) throws IOException {
-		Function<IntArray, IntArray> transactionParser = new Function<IntArray, IntArray>() {
-			private static final long serialVersionUID = 165521644289765913L;
+		Function<String, IntArray> transactionParser = new Function<String, IntArray>() {
 
-			public IntArray call(IntArray items) throws Exception {
-				Arrays.sort(items.value);
-				return items;
+			private static final long serialVersionUID = -7073931999435470322L;
+
+			public IntArray call(String line) throws Exception {
+				String[] items = line.split(" ");
+				int[] itemset = new int[items.length];
+				for (int i = 0; i < items.length; i++){
+					itemset[i] = Integer.parseInt(items[i]);
+				}
+				Arrays.sort(itemset);
+				IntArray ar = new IntArray(itemset);
+				return ar;
 			}
 
 		};
@@ -436,7 +417,7 @@ public class Main {
 		boolean firstRound = true;
 		Set<IntArray> candidates = null;
 		InnerTrieNode trie = null;
-
+		/*
 		long startTime = System.currentTimeMillis();
 		List<IntArray> compressedInputFile = intCompressInputFile(args[0]);
 		System.out.println("compressing the input file on the master took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
@@ -445,8 +426,9 @@ public class Main {
 		startTime = System.currentTimeMillis();
 		JavaRDD<IntArray> inputLines = context.parallelize(compressedInputFile);
 		System.out.println("parallelizing the compressed input file took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
-
-		startTime = System.currentTimeMillis();
+*/
+		long startTime = System.currentTimeMillis();
+		JavaRDD<String> inputLines = context.textFile(args[0]);
 		JavaRDD<IntArray> transactions = inputLines.map(transactionParser);
 		do {
 			JavaPairRDD<Integer, Integer> transactionsMapped;
@@ -526,12 +508,19 @@ public class Main {
 	}
 
 	private static void aprioriOnInts(String[] args, JavaSparkContext context) throws IOException {
-		Function<IntArray, IntArray> transactionParser = new Function<IntArray, IntArray>() {
-			private static final long serialVersionUID = 165521644289765913L;
+		Function<String, IntArray> transactionParser = new Function<String, IntArray>() {
 
-			public IntArray call(IntArray items) throws Exception {
-				Arrays.sort(items.value);
-				return items;
+			private static final long serialVersionUID = -2526089249063746690L;
+
+			public IntArray call(String line) throws Exception {
+				String[] items = line.split(" ");
+				int[] itemset = new int[items.length];
+				for (int i = 0; i < items.length; i++){
+					itemset[i] = Integer.parseInt(items[i]);
+				}
+				Arrays.sort(itemset);
+				IntArray ar = new IntArray(itemset);
+				return ar;
 			}
 
 		};
@@ -565,7 +554,7 @@ public class Main {
 		Set<IntArray> candidates = null;
 
 		long startTime = System.currentTimeMillis();
-		List<IntArray> compressedInputFile = intCompressInputFile(args[0]);
+		/*List<IntArray> compressedInputFile = intCompressInputFile(args[0]);
 		System.out.println("compressing the input file on the master took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 		System.out.println("Memory in use [MB]: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024);
 
@@ -573,7 +562,8 @@ public class Main {
 		JavaRDD<IntArray> inputLines = context.parallelize(compressedInputFile);
 		System.out.println("parallelizing the compressed input file took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
-		startTime = System.currentTimeMillis();
+		startTime = System.currentTimeMillis();*/
+		JavaRDD<String> inputLines = context.textFile(args[0]);
 		JavaRDD<IntArray> transactions = inputLines.map(transactionParser);
 
 		do {

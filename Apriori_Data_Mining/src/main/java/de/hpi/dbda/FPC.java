@@ -73,12 +73,20 @@ public class FPC {
 	}
 	
 	public static void fpcOnIntsWithTrie(String[] args, JavaSparkContext context) throws IOException {
-		Function<IntArray, IntArray> transactionParser = new Function<IntArray, IntArray>() {
-			private static final long serialVersionUID = 165521644289765913L;
+		
+		Function<String, IntArray> transactionParser = new Function<String, IntArray>() {
 
-			public IntArray call(IntArray items) throws Exception {
-				Arrays.sort(items.value);
-				return items;
+			private static final long serialVersionUID = -2526089249063746690L;
+
+			public IntArray call(String line) throws Exception {
+				String[] items = line.split(" ");
+				int[] itemset = new int[items.length];
+				for (int i = 0; i < items.length; i++){
+					itemset[i] = Integer.parseInt(items[i]);
+				}
+				Arrays.sort(itemset);
+				IntArray ar = new IntArray(itemset);
+				return ar;
 			}
 
 		};
@@ -117,7 +125,7 @@ public class FPC {
 		InnerTrieNode trie = null;
 
 		long startTime = System.currentTimeMillis();
-		List<IntArray> compressedInputFile = Main.intCompressInputFile(args[0]);
+		/*List<IntArray> compressedInputFile = Main.intCompressInputFile(args[0]);
 		
 		System.out.println("compressing the input file on the master took " +
 						  ((System.currentTimeMillis() - startTime) / 1000) + 
@@ -125,14 +133,17 @@ public class FPC {
 		System.out.println("Memory in use [MB]: " + 
 						  (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024);
 
+		
 		startTime = System.currentTimeMillis();
-		JavaRDD<IntArray> inputLines = context.parallelize(compressedInputFile);
+		
 		System.out.println("parallelizing the compressed input file took " + 
 						  ((System.currentTimeMillis() - startTime) / 1000) + 
-						  " seconds");
+						  " seconds");*/
 
 		startTime = System.currentTimeMillis();
+		JavaRDD<String> inputLines = context.textFile(args[0]);
 		JavaRDD<IntArray> transactions = inputLines.map(transactionParser);
+
 		do {
 			JavaPairRDD<Integer, Integer> transactionsMapped;
 			if (firstRound) {
@@ -146,7 +157,7 @@ public class FPC {
 			JavaPairRDD<Integer, Integer> filteredSupport = reducedTransactions.filter(minSupportFilter);
 			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
 
-			//count confidence
+			//count support
 			List<Tuple2<IntArray, Integer>> collectedItemSets = Main.spellOutLargeItems(collected, firstRound);
 			for (Tuple2<IntArray, Integer> tuple : collectedItemSets) {
 				allSupport.put(tuple._1.valueSet(), tuple._2);
