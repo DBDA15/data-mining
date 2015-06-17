@@ -21,14 +21,21 @@ public class createNetflixTransaction {
 		BufferedReader br = new BufferedReader(new InputStreamReader(fstream));
 
 		String strLine;
-		String user = filename.split("_")[1];
+		String[] fn = filename.split("/");
+		String uidWithTxt = fn[fn.length-1];
+		String uidWithMV = uidWithTxt.split("_")[1];
+		String uidWith = uidWithTxt.split("\\.")[0];
+		String uid = uidWith.split("_")[1];
+		
+		int movieId = Integer.parseInt(uid);
+		
 
 		while ((strLine = br.readLine()) != null)   {
 			 String[] sentence = strLine.split(",");
 			  if (sentence.length != 3)
 				  continue;
 			  
-			  transaction.put(sentence[1], sentence[0]);
+			  transaction.put(sentence[1], ""+movieId);
 		}
 		br.close();
 		return transaction;
@@ -79,7 +86,7 @@ public class createNetflixTransaction {
 		
 	public static void main(String[] args) throws IOException {
 		
-		forAllFilesIn("/home/mascha/dbda2015/Data/netflix/training_set/", "output.txt");
+		forAllFilesIn("/home/mascha/dbda2015/Data/netflix/training_set/", "output3.txt");
 		//MultiValueMap m = create("mv_0000001.txt");
 		
 		//writeMapToFile("user1", m);

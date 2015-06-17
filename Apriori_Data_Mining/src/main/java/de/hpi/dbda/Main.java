@@ -41,7 +41,6 @@ public class Main {
 	public static HashMap<Set,Integer> allSupport = new HashMap<Set, Integer>();
 	public static double minConf;
 	public static int minSupport;
-	public static int minRating;
 
 	public static boolean compareLists(List<String> l1, List<String> l2) {
 		// TODO implement as Hashset @Mascha
@@ -80,12 +79,12 @@ public class Main {
 		Set l = ar.last;
 		String itemString;
 		for (Object i : f) {
-			itemString = (String) (i instanceof String ? i : i);
+			itemString = (String) (i instanceof String ? i : i.toString());
 			al += itemString + ", ";
 		}
 		al += " => ";
 		for (Object i : l) {
-			itemString = (String) (i instanceof String ? i : i);
+			itemString = (String) (i instanceof String ? i : i.toString());
 			al += itemString + ", ";
 		}
 		al += "\n";
@@ -189,7 +188,7 @@ public class Main {
 	}
 
 	private static ArrayList<IntArray> candidateLookup = null;
-	//TODO was private
+
 	public static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
 		
 		TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
@@ -327,7 +326,7 @@ public class Main {
 		int compressionOutput = Integer.MIN_VALUE;
 		while ((line = reader.readLine()) != null) {
 			words = line.split(" ");
-			if (words.length > 0 && Integer.parseInt(words[0]) >= minRating) {
+			if (words.length > 0) {
 				for (String myWord : words) {
 					compressionMap.put(myWord, compressionOutput);
 					compressionMapping.put(compressionOutput, myWord);
@@ -354,7 +353,7 @@ public class Main {
 		int[] compressedLine;
 		while ((line = reader.readLine()) != null) {
 			words = line.split(" ");
-			if (words.length > 0 && Integer.parseInt(words[0]) >= minRating) {
+			if (words.length > 0) {
 				compressedLine = new int[words.length];
 				for (int i = 0; i < words.length; i++) {
 					compressionOutput = compressionMap.get(words[i]);
@@ -593,14 +592,12 @@ public class Main {
 	}
 	
 	private static void aprioriOnStrings(String[] args, JavaSparkContext context) {
-		final int minRatingValue = Main.minRating;
 		Function<String, List<String>> transactionParser = new Function<String, List<String>>() {
 			private static final long serialVersionUID = -4625524329716723997L;
-			public int minRating = minRatingValue;
 
 			public List<String> call(String line) throws Exception {
 				String[] items = line.split(" ");
-				if (items.length > 0 && Integer.parseInt(items[0]) >= Main.minRating) {
+				if (items.length > 0) {
 					Arrays.sort(items);
 					return Arrays.asList(items);
 				} else {
@@ -670,7 +667,7 @@ public class Main {
 
 	public static void main(String[] args) throws IOException {
 
-        if (args.length < 6) {
+        if (args.length < 5) {
             System.out.println("please provide the following parameters: input_path, result_file_path, modus, minSupport, minRating and minConfidence");
             System.out.println("for example:");
             System.out.println("./spark-submit --master spark://172.16.21.111:7077 --driver-memory 7g --conf spark.executor.memory=4g --class de.hpi.dbda.Main /home/martin.gebert/Apriori_Data_Mining-0.0.1-SNAPSHOT.jar hdfs://tenemhead2:8020/data/netflix.txt /home/martin.gebert/result.txt ints 8000 5 0.5");
@@ -678,8 +675,7 @@ public class Main {
         }
         
 		minSupport = Integer.parseInt(args[3]);
-		minRating = Integer.parseInt(args[4]);
-		minConf = Double.parseDouble(args[5]);
+		minConf = Double.parseDouble(args[4]);
 
         SparkConf sparkConf = new SparkConf().setAppName(Main.class.getName()).set("spark.hadoop.validateOutputSpecs", "false");
         JavaSparkContext context = new JavaSparkContext(sparkConf);
