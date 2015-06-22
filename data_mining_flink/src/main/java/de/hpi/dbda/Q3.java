@@ -3,8 +3,6 @@ package de.hpi.dbda;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
-import java.io.IOException;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -19,13 +17,10 @@ import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
 import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.api.java.tuple.Tuple5;
-import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.util.Collector;
 
 public class Q3 {
@@ -110,6 +105,154 @@ public class Q3 {
 		}
 
 		return result;
+	}
+	
+	public static Set<IntArray> generateCandidatesInt(List<Tuple2<IntArray, Integer>> largeItemTuples) {
+		Set<IntArray> largeItems = new HashSet<IntArray>(largeItemTuples.size());
+		for (Tuple2<IntArray, Integer> tuple : largeItemTuples) {
+			largeItems.add(tuple.f0);
+		}
+
+		HashSet<IntArray> result = new HashSet<IntArray>();
+		MultiValueMapWithArrayList map = new MultiValueMapWithArrayList();
+		for (int i = 0; i < largeItemTuples.size(); i++) {
+			IntArrayPointer key = new IntArrayPointer(largeItemTuples.get(i).f0, largeItemTuples.get(i).f0.value.length - 1);
+			map.put(key, largeItemTuples.get(i).f0);
+		}
+
+		for (Object key : map.keySet()) {
+			ArrayList<IntArray> entrySet = (ArrayList<IntArray>) map.getCollection(key);
+			for (int i = 0; i < entrySet.size() - 1; i++) {
+				for (int j = i + 1; j < entrySet.size(); j++) {
+					IntArray candidate;
+					if (entrySet.get(i).value[entrySet.get(i).value.length - 1] < entrySet.get(j).value[entrySet.get(j).value.length - 1]) { // if the item set at position i is "smaller than" the item set at position j
+						candidate = new IntArray(entrySet.get(i), entrySet.get(j).value[entrySet.get(j).value.length - 1]);
+					} else {
+						candidate = new IntArray(entrySet.get(j), entrySet.get(i).value[entrySet.get(i).value.length - 1]);
+					}
+
+					boolean keepCandidate = true;
+					for (int ignoreIndex = 0; ignoreIndex < candidate.value.length - 2; ignoreIndex++) {
+						// store a copy of candidate minus the element at ignoreIndex in newValue
+						int[] subset = new int[candidate.value.length - 1];
+						for (int copyIndex = 0, newValueIndex = 0; newValueIndex < subset.length; copyIndex++, newValueIndex++) {
+							if (copyIndex == ignoreIndex) {
+								copyIndex++;
+							}
+							subset[newValueIndex] = candidate.value[copyIndex];
+						}
+
+						if (!largeItems.contains(new IntArray(subset))) {
+							keepCandidate = false;
+							break;
+						}
+					}
+					if (keepCandidate) {
+						result.add(candidate);
+					}
+				}
+			}
+		}
+
+		return result;
+	}
+
+	private static void aprioriOnInts(String[] args, ExecutionEnvironment env) throws Exception {
+		MapFunction<String, IntArray> transactionParser = new MapFunction<String, IntArray>() {
+			private static final long serialVersionUID = -2163238643793472047L;
+
+			public IntArray map(String line) {
+				String[] items = line.split(" ");
+				int[] itemset = new int[items.length];
+				for (int i = 0; i < items.length; i++){
+					itemset[i] = Integer.parseInt(items[i]);
+				}
+				Arrays.sort(itemset);
+				IntArray ar = new IntArray(itemset);
+				return ar;
+			}
+
+		};
+
+		FlatMapFunction<IntArray, Tuple2<IntArray, Integer>> singleItemsExtractor = new FlatMapFunction<IntArray, Tuple2<IntArray, Integer>>() {
+			private static final long serialVersionUID = 4206575656443369070L;
+
+			public void flatMap(IntArray transaction, Collector<Tuple2<IntArray, Integer>> out) {
+				for (int item : transaction.value) {
+					IntArray itemList = new IntArray(new int[] { item });
+					out.collect(new Tuple2<IntArray, Integer>(itemList, 1));
+				}
+			}
+
+		};
+
+		GroupReduceFunction<Tuple2<IntArray, Integer>, Tuple2<IntArray, Integer>> reducer = new GroupReduceFunction<Tuple2<IntArray, Integer>, Tuple2<IntArray, Integer>>() {
+			private static final long serialVersionUID = 518526817484926956L;
+
+			public void reduce(Iterable<Tuple2<IntArray, Integer>> v, Collector<Tuple2<IntArray, Integer>> out) {
+				int sum = 0;
+				IntArray list = null;
+				for (Tuple2<IntArray, Integer> i : v) {
+					sum += i.f1;
+					list = i.f0;
+
+				}
+				out.collect(new Tuple2<IntArray, Integer>(list, sum));
+			}
+		};
+				
+		FilterFunction<Tuple2<IntArray, Integer>> minSupportFilter = new MinSupportFilter<IntArray>(Q3.minSupport);
+
+		boolean firstRound = true;
+		Set<IntArray> candidates = null;
+
+		long startTime = System.currentTimeMillis();
+		/*List<IntArray> compressedInputFile = intCompressInputFile(args[0]);
+		System.out.println("compressing the input file on the master took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		System.out.println("Memory in use [MB]: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024);
+
+		startTime = System.currentTimeMillis();
+		JavaRDD<IntArray> inputLines = context.parallelize(compressedInputFile);
+		System.out.println("parallelizing the compressed input file took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+
+		startTime = System.currentTimeMillis();*/
+		DataSet<String> inputLines = env.readTextFile(args[0]);
+		DataSet<IntArray> transactions = inputLines.map(transactionParser);
+
+		do {
+			DataSet<Tuple2<IntArray, Integer>> transactionsMapped;
+			if (firstRound) {
+				firstRound = false;
+				transactionsMapped = transactions.flatMap(singleItemsExtractor);
+			} else {
+				CandidatesListMatcher myCandidateMatcher = new CandidatesListMatcher(candidates);
+				transactionsMapped = transactions.flatMap(myCandidateMatcher);
+			}
+			DataSet<Tuple2<IntArray, Integer>> reducedTransactions = transactionsMapped.groupBy(new KeySelector<Tuple2<IntArray,Integer>,String>(){
+				private static final long serialVersionUID = 3029831776513575439L;
+
+				public String getKey(Tuple2<IntArray, Integer> t) {
+					String result = "";
+					for (int i : t.f0.value) {
+						result += Integer.toString(i) + " ";
+					}
+					return result;
+				}
+			}).reduceGroup(reducer);
+			DataSet<Tuple2<IntArray, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter);
+			List<Tuple2<IntArray, Integer>> collected = filteredSupport.collect();
+
+			for (Tuple2<IntArray, Integer> tuple : collected) {
+				allSupport.put(tuple.f0.valueSet(), tuple.f1);
+			}
+			
+			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+
+			startTime = System.currentTimeMillis();
+			candidates = generateCandidatesInt(collected);
+			largeItems.addAll(candidates);
+			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
+		} while (candidates.size() > 0);
 	}
 	
 	private static void aprioriOnStrings(String[] args, ExecutionEnvironment env) throws Exception {
@@ -236,15 +379,10 @@ public class Q3 {
             	aprioriOnStrings(args, env);
             break;
             case "ints":
-            //aprioriOnInts(args, context);
+            aprioriOnInts(args, env);
             break;
             case "trie":
-            //aprioriOnIntsWithTrie(args, context);
-            break;
-            case "fpc":
-            //FPC.fpcOnIntsWithTrie(args, context);
-            //Main.allSupport = FPC.allSupport;
-            //Main.largeItems = FPC.largeItemss;
+            //aprioriOnIntsWithTrie(args, env);
             break;
             default:
             System.out.println("unknown mode");
@@ -305,120 +443,4 @@ public class Q3 {
         bw.close();
 
     }
-	
-	
-
-  public static void main2(String[] args) throws Exception {
-    // get job parameters
-    final String lineItemFile = args[0];
-    final String ordersFile = args[1];
-    final String resultFile = args[2];
-    final String DATE = "1995-03-15";
-
-    // set up the execution environment
-    final ExecutionEnvironment env = ExecutionEnvironment
-        .getExecutionEnvironment();
-
-    // load lineitems
-    DataSet<LineItem> lineItems = env.readTextFile(lineItemFile)
-    // map to lineitem
-        .map(new MapFunction<String, LineItem>() {
-          @Override
-          public LineItem map(String line) throws Exception {
-            return new LineItem(line);
-          }
-        })
-        // filter by SHIPDATE>DATE
-        .filter(new FilterFunction<LineItem>() {
-          @Override
-          public boolean filter(LineItem li) throws Exception {
-            return li.SHIPDATE().compareTo(DATE) > 0;
-          }
-        });
-
-    // aggregate sum(PRICE *(1-DISCOUNT)) by ORDERKEY
-    DataSet<Tuple2<Integer, Double>> lineItemRevenue = lineItems
-        .map(new MapFunction<Q3.LineItem, Tuple2<Integer, Double>>() {
-          @Override
-          public Tuple2<Integer, Double> map(LineItem li) throws Exception {
-            return new Tuple2<Integer, Double>(li.ORDERKEY(), li.PRICE() * (1 - li.DISCOUNT()));
-          }
-        }).groupBy(0).sum(1);
-
-    // load orders
-    DataSet<Order> orders = env.readTextFile(ordersFile)
-    // map to order
-        .map(new MapFunction<String, Order>() {
-          @Override
-          public Order map(String line) throws Exception {
-            return new Order(line);
-          }
-          // filter by SHIPDATE>DATE
-        }).filter(new FilterFunction<Order>() {
-          @Override
-          public boolean filter(Order order) throws Exception {
-            return order.ORDERDATE().compareTo(DATE) < 0;
-          }
-        });
-
-    // join by ORDERKEY
-    DataSet<Tuple2<Integer, Double>> joined = lineItemRevenue
-        .join(orders)
-        .where(0)
-        .equalTo(0)
-        // modify / cleanup tuple format
-        .map(new MapFunction<Tuple2<Tuple2<Integer, Double>, Order>, Tuple2<Integer, Double>>() {
-          @Override
-          public Tuple2<Integer, Double> map(Tuple2<Tuple2<Integer, Double>,Order> value) throws Exception {
-            return value.f0;
-          }
-        })
-        // sort by revenue (desc) <-- only partition-wise
-        .sortPartition(1, org.apache.flink.api.common.operators.Order.DESCENDING)
-        ;
-    // save results
-    joined.writeAsCsv(resultFile, "\n", "\t", WriteMode.OVERWRITE);
-
-    //*
-    // execute program
-    env.execute("TPC-H Q3");
-    /*/
-    System.out.println(env.getExecutionPlan());
-    //*/
-  }
-  
-  public static class LineItem extends Tuple5<Integer, Integer, Double, Double, String> 
-  	implements Serializable {
-    Integer ORDERKEY() {return f0;};
-    Integer ITEM() {return f1;};
-    Double PRICE() {return f2;};
-    Double DISCOUNT() {return f3;};
-    String SHIPDATE() {return f4;};
-    // define default constructor (used for deserialization)
-    public LineItem() { }
-    public LineItem(String line) {
-      this(line.split("\\|"));
-    }
-    public LineItem(String[] values) {
-      super(
-        Integer.parseInt(values[0]),
-        Integer.parseInt(values[3]),
-        Double.parseDouble(values[5]),
-        Double.parseDouble(values[6]),
-        values[10]);
-    }
-  }
-  
-  public static class Order extends Tuple2<Integer, String> implements Serializable {
-    Integer ORDERKEY() {return f0;};
-    String ORDERDATE() {return f1;};
-    // define default constructor (used for deserialization)
-    public Order() { }
-    public Order(String line) {
-      this(line.split("\\|"));
-    }
-    public Order(String[] values) {
-      super(Integer.parseInt(values[0]), values[4]);
-    }
-  }
 }

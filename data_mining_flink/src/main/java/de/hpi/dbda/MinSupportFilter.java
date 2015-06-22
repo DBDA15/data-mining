@@ -1,8 +1,6 @@
 package de.hpi.dbda;
 
 
-import java.util.List;
-
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 
