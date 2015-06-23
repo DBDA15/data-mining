@@ -11,6 +11,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.FilterFunction;
@@ -23,7 +24,9 @@ import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
 
-public class Q3 {
+import de.hpi.dbda.trie.InnerTrieNode;
+
+public class Main {
 	
 	
 	public static Map<Integer, String> compressionMapping = new HashMap<Integer, String>();
@@ -156,6 +159,242 @@ public class Q3 {
 
 		return result;
 	}
+	
+	private static ArrayList<IntArray> candidateLookup = null;
+
+	public static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
+		
+		TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
+		//TODO length +2 hard coded, may be fixed with DPC
+		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length+3];
+		candidateLookup = new ArrayList<IntArray>(sortedCandidates);
+
+		// for every candidate, find the smallest index at which it differs from the previous candidate
+		int[] firstDifferentElementIndices = new int[sortedCandidates.size()];
+		firstDifferentElementIndices[0] = sortedCandidates.iterator().next().value.length - 1;
+		IntArray previousCandidate = null;
+		int candidateIndex = 0;
+		for (IntArray candidate : sortedCandidates) {
+			if (previousCandidate != null) {
+				//TODO check if it is right
+				firstDifferentElementIndices[candidateIndex] = Math.min(candidate.value.length, 
+																		previousCandidate.value.length);
+				for (int i = 0; i < Math.min(candidate.value.length, previousCandidate.value.length); i++) {
+					if (candidate.value[i] != previousCandidate.value[i]) {
+						firstDifferentElementIndices[candidateIndex] = i;
+						break;
+					}
+				}
+			}
+			candidateIndex++;
+			previousCandidate = candidate;
+		}
+		
+		// create a trie containing the nodes for the first candidate only
+		for (int level = 0; level < sortedCandidates.iterator().next().value.length; level++) {
+			int childCount = countChildren(firstDifferentElementIndices, 0, level);
+
+			InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new InnerTrieNode[childCount]);
+			if (level != 0) {
+				currentTriePath[level - 1].edgeLabels[0] = sortedCandidates.iterator().next().value[level - 1];
+				currentTriePath[level - 1].children[0] = newNode;
+			}
+			currentTriePath[level] = newNode;
+		}
+
+		candidateIndex = 0;
+		for (IntArray candidate : sortedCandidates) {
+			// find the leftmost child slot that doesn't contain any data
+			int childIndex;
+			int entryLevel = firstDifferentElementIndices[candidateIndex] + 1; //Entry level for for-loop if anchorNode == null
+			InnerTrieNode anchorNode = currentTriePath[firstDifferentElementIndices[candidateIndex]];
+			if (anchorNode != null) {
+				for (childIndex = anchorNode.children.length - 1; 
+					 anchorNode.children[childIndex] == null && childIndex > 0;
+					 childIndex--) {
+					// nothing to do here - the whole logic is in the loop header
+				}
+				if (anchorNode.children[childIndex] != null) {
+					childIndex++;
+				}
+			} else {
+				childIndex = 0;
+				entryLevel -= 1;
+			}
+					
+
+			// create the new InnerTrieNodes that are needed for candidate
+			for (int level = entryLevel; level < candidate.value.length; level++) {
+				int childCount = countChildren(firstDifferentElementIndices, candidateIndex, level);
+
+				InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new InnerTrieNode[childCount]);
+				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
+				currentTriePath[level - 1].children[childIndex] = newNode;
+				currentTriePath[level] = newNode;
+				childIndex = 0;
+			}
+
+			// create the TrieLeaf for candidate
+			int level = candidate.value.length;
+			int newNodeIndex = -1;
+			for (int edge = 0; edge < currentTriePath[level-1].edgeLabels.length; edge++) {
+				if (currentTriePath[level-1].edgeLabels[edge] == candidate.value[level - 1]) {
+					newNodeIndex = edge;
+					break;
+				}
+			}
+			if (newNodeIndex == -1) {
+				int childrenCount =  countChildren(firstDifferentElementIndices,candidateIndex, candidate.length());
+				InnerTrieNode newNode = new InnerTrieNode(candidateIndex, new int[childrenCount], new InnerTrieNode[childrenCount]);
+				currentTriePath[level]=newNode;
+				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
+				currentTriePath[level - 1].children[childIndex] = newNode;
+			} else {
+				currentTriePath[level - 1].children[newNodeIndex].candidateID = candidateIndex;
+			}
+			candidateIndex++;
+		}
+		
+		return currentTriePath[0];
+	}
+
+	private static int countChildren(int[] firstDifferentElementIndices, int currentCandidateIndex, int level) {
+		int childCount = 1;
+		for (int i = currentCandidateIndex + 1; i < firstDifferentElementIndices.length; i++) {
+			if (firstDifferentElementIndices[i] == level) {
+				if (candidateLookup.get(i).value.length > level) {
+					childCount++;
+				}
+			} else if (firstDifferentElementIndices[i] < level) {
+				break;
+			}
+		}
+		return childCount;
+	}
+
+	private static void aprioriOnIntsWithTrie(String[] args, ExecutionEnvironment env) throws Exception {
+		MapFunction<String, IntArray> transactionParser = new MapFunction<String, IntArray>() {
+			private static final long serialVersionUID = -2163238643793472047L;
+
+			public IntArray map(String line) {
+				String[] items = line.split(" ");
+				int[] itemset = new int[items.length];
+				for (int i = 0; i < items.length; i++){
+					itemset[i] = Integer.parseInt(items[i]);
+				}
+				Arrays.sort(itemset);
+				IntArray ar = new IntArray(itemset);
+				return ar;
+			}
+
+		};
+
+		FlatMapFunction<IntArray, Tuple2<Integer, Integer>> singleItemsExtractor = new FlatMapFunction<IntArray, Tuple2<Integer, Integer>>() {
+			private static final long serialVersionUID = 4206575656443369070L;
+
+			public void flatMap(IntArray transaction, Collector<Tuple2<Integer, Integer>> out) throws Exception {
+				for (int item : transaction.value) {
+					out.collect(new Tuple2<Integer, Integer>(item, 1));
+				}
+			}
+
+		};
+
+		GroupReduceFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> reducer = new Reducer<Integer>();
+
+		FilterFunction<Tuple2<Integer, Integer>> minSupportFilter = new MinSupportFilter<Integer>(minSupport);
+
+		boolean firstRound = true;
+		Set<IntArray> candidates = null;
+		InnerTrieNode trie = null;
+		/*
+		long startTime = System.currentTimeMillis();
+		List<IntArray> compressedInputFile = intCompressInputFile(args[0]);
+		System.out.println("compressing the input file on the master took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		System.out.println("Memory in use [MB]: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024);
+
+		startTime = System.currentTimeMillis();
+		JavaRDD<IntArray> inputLines = context.parallelize(compressedInputFile);
+		System.out.println("parallelizing the compressed input file took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		*/
+		long startTime = System.currentTimeMillis();
+		DataSet<String> inputLines = env.readTextFile(args[0]);
+		DataSet<IntArray> transactions = inputLines.map(transactionParser);
+		do {
+			DataSet<Tuple2<Integer, Integer>> transactionsMapped;
+			if (firstRound) {
+				transactionsMapped = transactions.flatMap(singleItemsExtractor);
+			} else {
+				CandidateMatcherTrie myCandidateMatcher = new CandidateMatcherTrie(trie);
+				transactionsMapped = transactions.flatMap(myCandidateMatcher);
+			}
+			DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).reduceGroup(reducer);
+			
+			DataSet<Tuple2<Integer, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter);
+			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
+
+			//count confidence
+			List<Tuple2<IntArray, Integer>> collectedItemSets = spellOutLargeItems(collected, firstRound);
+			for (Tuple2<IntArray, Integer> tuple : collectedItemSets) {
+				allSupport.put(tuple.f0.valueSet(), tuple.f1);
+			}
+			
+			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+
+			startTime = System.currentTimeMillis();
+			List<Tuple2<IntArray, Integer>> largeItemSets= spellOutLargeItems(collected, firstRound);
+			candidates = generateCandidatesInt(largeItemSets);
+			largeItems.addAll(candidates);
+			if (candidates.size() > 0) {
+				trie = candidatesToTrie(candidates);
+			}
+			firstRound = false;
+			
+			/*for (IntArray i : candidates) {
+				for (int j = 0; j < i.length(); j++) {
+					System.out.print(compressionMapping.get(i.value[j]));
+					System.out.print(" ");
+				}
+				System.out.print("; ");
+			}
+			System.out.println("");*/
+			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
+		} while (candidates.size() > 0);
+	}
+
+	public static List<Tuple2<IntArray, Integer>> spellOutLargeItems(List<Tuple2<Integer, Integer>> collected, boolean firstRound) {
+		ArrayList<Tuple2<IntArray, Integer>> result = new ArrayList<Tuple2<IntArray, Integer>>(collected.size());
+		if (firstRound) {
+			for (Tuple2<Integer, Integer> largeItemSet : collected) {
+				result.add(new Tuple2<IntArray, Integer>(new IntArray(new int[] { largeItemSet.f0 }), largeItemSet.f1));
+			}
+		} else {
+			for (Tuple2<Integer, Integer> largeItemSet : collected) {
+				result.add(new Tuple2<IntArray, Integer>(candidateLookup.get(largeItemSet.f0), largeItemSet.f1));
+			}
+		}
+		return result;
+	}
+
+	public static void printTrie(InnerTrieNode node) {
+		if (node == null) {
+			System.out.println("null");
+			return;
+		}
+		if (node.candidateID != -1) {
+			System.out.println("<" + candidateLookup.get((node).candidateID).printDecoded(compressionMapping) + ">");
+		} else {
+			InnerTrieNode innerNode = (InnerTrieNode) node;
+			System.out.println();
+			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
+				System.out.print(compressionMapping.get(innerNode.edgeLabels[i]) + ", ");
+			}
+			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
+				printTrie(innerNode.children[i]);
+			}
+			System.out.println();
+		}
+	}
 
 	private static void aprioriOnInts(String[] args, ExecutionEnvironment env) throws Exception {
 		MapFunction<String, IntArray> transactionParser = new MapFunction<String, IntArray>() {
@@ -186,22 +425,8 @@ public class Q3 {
 
 		};
 
-		GroupReduceFunction<Tuple2<IntArray, Integer>, Tuple2<IntArray, Integer>> reducer = new GroupReduceFunction<Tuple2<IntArray, Integer>, Tuple2<IntArray, Integer>>() {
-			private static final long serialVersionUID = 518526817484926956L;
-
-			public void reduce(Iterable<Tuple2<IntArray, Integer>> v, Collector<Tuple2<IntArray, Integer>> out) {
-				int sum = 0;
-				IntArray list = null;
-				for (Tuple2<IntArray, Integer> i : v) {
-					sum += i.f1;
-					list = i.f0;
-
-				}
-				out.collect(new Tuple2<IntArray, Integer>(list, sum));
-			}
-		};
-				
-		FilterFunction<Tuple2<IntArray, Integer>> minSupportFilter = new MinSupportFilter<IntArray>(Q3.minSupport);
+		GroupReduceFunction<Tuple2<IntArray, Integer>, Tuple2<IntArray, Integer>> reducer = new Reducer<IntArray>();			
+		FilterFunction<Tuple2<IntArray, Integer>> minSupportFilter = new MinSupportFilter<IntArray>(Main.minSupport);
 
 		boolean firstRound = true;
 		Set<IntArray> candidates = null;
@@ -287,25 +512,10 @@ public class Q3 {
 
 		};
 
-		GroupReduceFunction<Tuple2<List<String>, Integer>, Tuple2<List<String>, Integer>> reducer = 
-				new GroupReduceFunction<Tuple2<List<String>, Integer>, Tuple2<List<String>, Integer>>() {
-			private static final long serialVersionUID = 9090470139360266644L;
-
-			public void reduce(Iterable<Tuple2<List<String>, Integer>> v,
-					Collector<Tuple2<List<String>, Integer>> out) {
-				int sum = 0;
-				List<String> list = null;
-				for (Tuple2<List<String>,Integer> i : v) {
-					sum += i.f1;
-					list = i.f0;
-					
-				}
-				out.collect(new Tuple2<List<String>, Integer>(list,sum));
-			}
-		};
+		GroupReduceFunction<Tuple2<List<String>, Integer>, Tuple2<List<String>, Integer>> reducer = new Reducer<List<String>>();
 
 		FilterFunction<Tuple2<List<String>, Integer>> minSupportFilter = 
-				new MinSupportFilter<List<String>>(Q3.minSupport);
+				new MinSupportFilter<List<String>>(Main.minSupport);
 
 		boolean firstRound = true;
 		Set<List<String>> candidates = null;
@@ -382,7 +592,7 @@ public class Q3 {
             aprioriOnInts(args, env);
             break;
             case "trie":
-            //aprioriOnIntsWithTrie(args, env);
+            aprioriOnIntsWithTrie(args, env);
             break;
             default:
             System.out.println("unknown mode");
