@@ -34,7 +34,6 @@ public class Main {
 	public static HashMap<Set,Integer> allSupport = new HashMap<Set, Integer>();
 	public static double minConf;
 	public static int minSupport;
-	public static int minRating;
 	
 	public static boolean checkARConfidenceAndSupport(AssociationRule ar) {
 		HashSet f = ar.first;
@@ -328,7 +327,7 @@ public class Main {
 				CandidateMatcherTrie myCandidateMatcher = new CandidateMatcherTrie(trie);
 				transactionsMapped = transactions.flatMap(myCandidateMatcher);
 			}
-			DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).reduceGroup(reducer);
+			DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).sum(1);
 			
 			DataSet<Tuple2<Integer, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter);
 			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
@@ -564,22 +563,21 @@ public class Main {
 
 	public static void main(String[] args) throws Exception {
 
-        if (args.length < 6) {
+        if (args.length < 5) {
             System.out.println("please provide the following parameters: input_path, " +
-            		"result_file_path, modus, minSupport, minRating and minConfidence");
+            		"result_file_path, modus, minSupport and minConfidence");
             System.out.println("for example:");
             System.out.println("./spark-submit --master spark://172.16.21.111:7077 " +
             		"--driver-memory 7g --conf spark.executor.memory=4g " +
             		"--class de.hpi.dbda.Main " +
             		"/home/martin.gebert/Apriori_Data_Mining-0.0.1-SNAPSHOT.jar " +
             		"hdfs://tenemhead2:8020/data/netflix.txt " +
-            		"/home/martin.gebert/result.txt ints 8000 5 0.5");
+            		"/home/martin.gebert/result.txt ints 8000 0.5");
             System.exit(0);
         }
         
 		minSupport = Integer.parseInt(args[3]);
-		minRating = Integer.parseInt(args[4]);
-		minConf = Double.parseDouble(args[5]);
+		minConf = Double.parseDouble(args[4]);
 
 		final ExecutionEnvironment env = ExecutionEnvironment
 		        .getExecutionEnvironment();
