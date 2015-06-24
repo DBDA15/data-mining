@@ -21,6 +21,7 @@ import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.operators.GroupReduceOperator;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
 
@@ -109,6 +110,7 @@ public class Main {
 		return result;
 	}
 	
+
 	public static Set<IntArray> generateCandidatesInt(List<Tuple2<IntArray, Integer>> largeItemTuples) {
 		Set<IntArray> largeItems = new HashSet<IntArray>(largeItemTuples.size());
 		for (Tuple2<IntArray, Integer> tuple : largeItemTuples) {
@@ -159,118 +161,6 @@ public class Main {
 		return result;
 	}
 	
-	private static ArrayList<IntArray> candidateLookup = null;
-
-	public static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
-		
-		TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
-		//TODO length +2 hard coded, may be fixed with DPC
-		InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length+3];
-		candidateLookup = new ArrayList<IntArray>(sortedCandidates);
-
-		// for every candidate, find the smallest index at which it differs from the previous candidate
-		int[] firstDifferentElementIndices = new int[sortedCandidates.size()];
-		firstDifferentElementIndices[0] = sortedCandidates.iterator().next().value.length - 1;
-		IntArray previousCandidate = null;
-		int candidateIndex = 0;
-		for (IntArray candidate : sortedCandidates) {
-			if (previousCandidate != null) {
-				//TODO check if it is right
-				firstDifferentElementIndices[candidateIndex] = Math.min(candidate.value.length, 
-																		previousCandidate.value.length);
-				for (int i = 0; i < Math.min(candidate.value.length, previousCandidate.value.length); i++) {
-					if (candidate.value[i] != previousCandidate.value[i]) {
-						firstDifferentElementIndices[candidateIndex] = i;
-						break;
-					}
-				}
-			}
-			candidateIndex++;
-			previousCandidate = candidate;
-		}
-		
-		// create a trie containing the nodes for the first candidate only
-		for (int level = 0; level < sortedCandidates.iterator().next().value.length; level++) {
-			int childCount = countChildren(firstDifferentElementIndices, 0, level);
-
-			InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new InnerTrieNode[childCount]);
-			if (level != 0) {
-				currentTriePath[level - 1].edgeLabels[0] = sortedCandidates.iterator().next().value[level - 1];
-				currentTriePath[level - 1].children[0] = newNode;
-			}
-			currentTriePath[level] = newNode;
-		}
-
-		candidateIndex = 0;
-		for (IntArray candidate : sortedCandidates) {
-			// find the leftmost child slot that doesn't contain any data
-			int childIndex;
-			int entryLevel = firstDifferentElementIndices[candidateIndex] + 1; //Entry level for for-loop if anchorNode == null
-			InnerTrieNode anchorNode = currentTriePath[firstDifferentElementIndices[candidateIndex]];
-			if (anchorNode != null) {
-				for (childIndex = anchorNode.children.length - 1; 
-					 anchorNode.children[childIndex] == null && childIndex > 0;
-					 childIndex--) {
-					// nothing to do here - the whole logic is in the loop header
-				}
-				if (anchorNode.children[childIndex] != null) {
-					childIndex++;
-				}
-			} else {
-				childIndex = 0;
-				entryLevel -= 1;
-			}
-					
-
-			// create the new InnerTrieNodes that are needed for candidate
-			for (int level = entryLevel; level < candidate.value.length; level++) {
-				int childCount = countChildren(firstDifferentElementIndices, candidateIndex, level);
-
-				InnerTrieNode newNode = new InnerTrieNode(new int[childCount], new InnerTrieNode[childCount]);
-				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
-				currentTriePath[level - 1].children[childIndex] = newNode;
-				currentTriePath[level] = newNode;
-				childIndex = 0;
-			}
-
-			// create the TrieLeaf for candidate
-			int level = candidate.value.length;
-			int newNodeIndex = -1;
-			for (int edge = 0; edge < currentTriePath[level-1].edgeLabels.length; edge++) {
-				if (currentTriePath[level-1].edgeLabels[edge] == candidate.value[level - 1]) {
-					newNodeIndex = edge;
-					break;
-				}
-			}
-			if (newNodeIndex == -1) {
-				int childrenCount =  countChildren(firstDifferentElementIndices,candidateIndex, candidate.length());
-				InnerTrieNode newNode = new InnerTrieNode(candidateIndex, new int[childrenCount], new InnerTrieNode[childrenCount]);
-				currentTriePath[level]=newNode;
-				currentTriePath[level - 1].edgeLabels[childIndex] = candidate.value[level - 1];
-				currentTriePath[level - 1].children[childIndex] = newNode;
-			} else {
-				currentTriePath[level - 1].children[newNodeIndex].candidateID = candidateIndex;
-			}
-			candidateIndex++;
-		}
-		
-		return currentTriePath[0];
-	}
-
-	private static int countChildren(int[] firstDifferentElementIndices, int currentCandidateIndex, int level) {
-		int childCount = 1;
-		for (int i = currentCandidateIndex + 1; i < firstDifferentElementIndices.length; i++) {
-			if (firstDifferentElementIndices[i] == level) {
-				if (candidateLookup.get(i).value.length > level) {
-					childCount++;
-				}
-			} else if (firstDifferentElementIndices[i] < level) {
-				break;
-			}
-		}
-		return childCount;
-	}
-
 	private static void aprioriOnIntsWithTrie(String[] args, ExecutionEnvironment env) throws Exception {
 		MapFunction<String, IntArray> transactionParser = new MapFunction<String, IntArray>() {
 			private static final long serialVersionUID = -2163238643793472047L;
@@ -330,6 +220,21 @@ public class Main {
 			DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).sum(1);
 			
 			DataSet<Tuple2<Integer, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter);
+			
+			ArrayList<Boolean> broadcastRound=new ArrayList<Boolean>(1);
+			broadcastRound.add(true);
+			DataSet<Tuple2<Set<Integer>, Integer>> deltaAllSupport = filteredSupport.map(new DeltaCalculator()).withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
+			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
+			
+			DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<Set<Integer>,Integer>,Integer>(){
+				private static final long serialVersionUID = 3910614534178503617L;
+
+				public Integer getKey(Tuple2<Set<Integer>, Integer> t) {
+					return 42;
+				}
+			}).reduceGroup(new TrieBuilder())
+			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME);
+			
 			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
 
 			//count confidence
@@ -341,8 +246,7 @@ public class Main {
 			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
 			startTime = System.currentTimeMillis();
-			List<Tuple2<IntArray, Integer>> largeItemSets= spellOutLargeItems(collected, firstRound);
-			candidates = generateCandidatesInt(largeItemSets);
+			candidates = generateCandidatesInt(collectedItemSets);
 			largeItems.addAll(candidates);
 			if (candidates.size() > 0) {
 				trie = candidatesToTrie(candidates);
@@ -359,20 +263,6 @@ public class Main {
 			System.out.println("");*/
 			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
-	}
-
-	public static List<Tuple2<IntArray, Integer>> spellOutLargeItems(List<Tuple2<Integer, Integer>> collected, boolean firstRound) {
-		ArrayList<Tuple2<IntArray, Integer>> result = new ArrayList<Tuple2<IntArray, Integer>>(collected.size());
-		if (firstRound) {
-			for (Tuple2<Integer, Integer> largeItemSet : collected) {
-				result.add(new Tuple2<IntArray, Integer>(new IntArray(new int[] { largeItemSet.f0 }), largeItemSet.f1));
-			}
-		} else {
-			for (Tuple2<Integer, Integer> largeItemSet : collected) {
-				result.add(new Tuple2<IntArray, Integer>(candidateLookup.get(largeItemSet.f0), largeItemSet.f1));
-			}
-		}
-		return result;
 	}
 
 	public static void printTrie(InnerTrieNode node) {
