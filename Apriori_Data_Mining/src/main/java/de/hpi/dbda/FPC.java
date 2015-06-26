@@ -21,7 +21,6 @@ import de.hpi.dbda.Main;
 
 public class FPC {
 	
-	public static Set<IntArray> largeItemss = new HashSet<IntArray>();
 	public static HashMap<Set,Integer> allSupport = new HashMap<Set, Integer>();
 
 	public static Set<IntArray> generateCandidatesInt(Set<IntArray> largeItems) {
@@ -180,7 +179,6 @@ public class FPC {
 				candidates.addAll(candidates1);
 				candidates.addAll(candidates2);
 			}
-			largeItemss.addAll(candidates);
 			if (candidates.size() > 0) {
 				trie = Main.candidatesToTrie(candidates);
 			}
