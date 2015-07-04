@@ -453,7 +453,6 @@ public class Main {
 			startTime = System.currentTimeMillis();
 			List<Tuple2<IntArray, Integer>> largeItemSets= spellOutLargeItems(collected, firstRound);
 			candidates = generateCandidatesInt(largeItemSets);
-			largeItems.addAll(candidates);
 			if (candidates.size() > 0) {
 				trie = candidatesToTrie(candidates);
 			}
@@ -586,7 +585,6 @@ public class Main {
 
 			startTime = System.currentTimeMillis();
 			candidates = generateCandidatesInt(collected);
-			largeItems.addAll(candidates);
 			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
 	}
@@ -693,7 +691,6 @@ public class Main {
             case "fpc":
             FPC.fpcOnIntsWithTrie(args, context);
             Main.allSupport = FPC.allSupport;
-            Main.largeItems = FPC.largeItemss;
             break;
             default:
             System.out.println("unknown mode");
@@ -704,14 +701,14 @@ public class Main {
         //CHANGE IF FPC - IntArray candidate : FPC.largeItemss
         //for (IntArray candidate : largeItems) {
 
-		if (largeItems.size() > 0 && largeItems.iterator().next() instanceof IntArray) {
-			for (IntArray candidate : (Set<IntArray>) largeItems) {
-				HashSet<HashSet<Integer>> pow = test.powerSet(candidate);
+		if (allSupport.size() > 0 && allSupport.keySet().iterator().next().iterator().next() instanceof Integer) {
+			for (Set<Integer> candidate : allSupport.keySet()) {
+				HashSet<HashSet<Integer>> pow = test.powerSet(new ArrayList<Integer>(candidate));
 				pow.remove(new HashSet<Integer>());
-				pow.remove(candidate.valueSet());
+				pow.remove(candidate);
 
 				for (HashSet<Integer> s : pow) {
-					HashSet<Integer> o = candidate.valueSet();
+					HashSet<Integer> o = new HashSet<Integer>(candidate);
 					o.removeAll(s);
 					AssociationRule<Integer> asr = new AssociationRule<Integer>(s, o);
 					if (checkARConfidenceAndSupport(asr)) {

@@ -1,4 +1,9 @@
+.metadata/*
+*.gitignore
+CompressionTest/*
+TransactionCreation/transactions_geo_coordinates_en
+mv_0000030.txt
+result.txt
+
 data_mining/target/*
 *.class
-*.classpath
-
