@@ -59,10 +59,10 @@ public class IntArray implements Serializable, Comparable<IntArray> {
 		}
 	}
 	
-	public String printDecoded(Map<Integer, String> map) {
+	public String printDecoded() {
 		String s = "";
 		for (int i : value) {
-			s += map.get(i);
+			s += i;
 			s += " ";
 		}
 		return s;

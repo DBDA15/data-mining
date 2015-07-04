@@ -1,5 +1,6 @@
 package de.hpi.dbda;
 
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +19,7 @@ import de.hpi.dbda.trie.InnerTrieNode;
 public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Integer>, TrieStruct> {
 	private static final long serialVersionUID = -8917906510553699266L;
 	public static final String CANDIDATE_LOOKUP_NAME = "candidateLookup";
+	public static final String TRIE_NAME = "trie";
 	
 	public static Set<IntArray> generateCandidatesInt(List<Tuple2<IntArray, Integer>> largeItemTuples) {
 		Set<IntArray> largeItems = new HashSet<IntArray>(largeItemTuples.size());
@@ -175,7 +177,27 @@ public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Intege
                 }
         }
         return childCount;
-}
+	}
+
+	public static void printTrie(InnerTrieNode node) {
+		if (node == null) {
+			System.out.println("null");
+			return;
+		}
+		if (node.candidateID != -1) {
+			System.out.println("<" + candidateLookup.get((node).candidateID).printDecoded() + ">");
+		} else {
+			InnerTrieNode innerNode = (InnerTrieNode) node;
+			System.out.println();
+			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
+				System.out.print(innerNode.edgeLabels[i] + ", ");
+			}
+			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
+				printTrie(innerNode.children[i]);
+			}
+			System.out.println();
+		}
+	}
 
     @Override
 	public void reduce(Iterable<Tuple2<IntArray, Integer>> largeItemsIterator,
@@ -187,11 +209,18 @@ public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Intege
 		}
     	
     	Set<IntArray> candidates = generateCandidatesInt(largeItems);
+    	
+    	System.out.println("candidates: "+candidates.size());
+    	
+    	if(candidates.size() == 0){
+    		return;
+    	}
+    	
     	InnerTrieNode trie = candidatesToTrie(candidates);
 
     	// serialize trie
     	Kryo kryo = new Kryo();
-		Output myOutput = new Output();
+		Output myOutput = new Output(new ByteArrayOutputStream());
 		kryo.writeObject(myOutput, trie);
 		byte[] buffer = myOutput.getBuffer();
 

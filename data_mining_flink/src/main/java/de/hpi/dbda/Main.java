@@ -9,9 +9,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.FilterFunction;
@@ -21,16 +19,18 @@ import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.functions.KeySelector;
-import org.apache.flink.api.java.operators.GroupReduceOperator;
+import org.apache.flink.api.java.operators.DeltaIteration;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
+
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
 
 import de.hpi.dbda.trie.InnerTrieNode;
 
 public class Main {
 	
 	
-	public static Map<Integer, String> compressionMapping = new HashMap<Integer, String>();
 	public static Set largeItems = new HashSet();
 	public static HashMap<Set,Integer> allSupport = new HashMap<Set, Integer>();
 	public static double minConf;
@@ -189,91 +189,99 @@ public class Main {
 
 		};
 
+		MapFunction<TrieStruct, byte[]> trieExtractor = new MapFunction<TrieStruct, byte[]>() {
+			private static final long serialVersionUID = -2145638643793472047L;
+
+			@Override
+			public byte[] map(TrieStruct value) throws Exception {
+				return value.trie;
+			}
+		};
+		
+		MapFunction<TrieStruct, List<IntArray>> lookupExtractor = new MapFunction<TrieStruct, List<IntArray>>() {
+			private static final long serialVersionUID = -2145546767567472047L;
+			
+			@Override
+			public List<IntArray> map(TrieStruct value) throws Exception {
+				return value.candidateLookup;
+			}
+		};
+		
 		GroupReduceFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>> reducer = new Reducer<Integer>();
 
 		FilterFunction<Tuple2<Integer, Integer>> minSupportFilter = new MinSupportFilter<Integer>(minSupport);
 
-		boolean firstRound = true;
-		Set<IntArray> candidates = null;
-		InnerTrieNode trie = null;
-		/*
-		long startTime = System.currentTimeMillis();
-		List<IntArray> compressedInputFile = intCompressInputFile(args[0]);
-		System.out.println("compressing the input file on the master took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
-		System.out.println("Memory in use [MB]: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024);
-
-		startTime = System.currentTimeMillis();
-		JavaRDD<IntArray> inputLines = context.parallelize(compressedInputFile);
-		System.out.println("parallelizing the compressed input file took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
-		*/
 		long startTime = System.currentTimeMillis();
 		DataSet<String> inputLines = env.readTextFile(args[0]);
 		DataSet<IntArray> transactions = inputLines.map(transactionParser);
-		do {
-			DataSet<Tuple2<Integer, Integer>> transactionsMapped;
-			if (firstRound) {
-				transactionsMapped = transactions.flatMap(singleItemsExtractor);
-			} else {
-				CandidateMatcherTrie myCandidateMatcher = new CandidateMatcherTrie(trie);
-				transactionsMapped = transactions.flatMap(myCandidateMatcher);
-			}
-			DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).sum(1);
-			
-			DataSet<Tuple2<Integer, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter);
-			
-			ArrayList<Boolean> broadcastRound=new ArrayList<Boolean>(1);
-			broadcastRound.add(true);
-			DataSet<Tuple2<IntArray, Integer>> deltaAllSupport = filteredSupport.map(new DeltaCalculator()).withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
+
+		//
+		// begin of first round
+		//
+		DataSet<Tuple2<Integer, Integer>> transactionsMapped;
+		transactionsMapped = transactions.flatMap(singleItemsExtractor);
+		DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).sum(1);
+		
+		DataSet<Tuple2<Integer, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter);
+		
+		ArrayList<Boolean> broadcastRound=new ArrayList<Boolean>(1);
+		broadcastRound.add(true);
+		DataSet<Tuple2<IntArray, Integer>> deltaAllSupport = filteredSupport.map(new DeltaCalculator())
+			.withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
 			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
-			
-			DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
-				private static final long serialVersionUID = 3910614534178503617L;
 
-				public Integer getKey(Tuple2<IntArray, Integer> t) {
-					return 42;
-				}
-			}).reduceGroup(new TrieBuilder())
-			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME);
-			
-			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
+			private static final long serialVersionUID = 3910614534178503617L;
 
-			startTime = System.currentTimeMillis();
-			candidates = generateCandidatesInt(collectedItemSets);
-			if (candidates.size() > 0) {
-				trie = candidatesToTrie(candidates);
+			public Integer getKey(Tuple2<IntArray, Integer> t) {
+				return 42;
 			}
-			firstRound = false;
-			
-			/*for (IntArray i : candidates) {
-				for (int j = 0; j < i.length(); j++) {
-					System.out.print(compressionMapping.get(i.value[j]));
-					System.out.print(" ");
-				}
-				System.out.print("; ");
-			}
-			System.out.println("");*/
-			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
-		} while (candidates.size() > 0);
-	}
+		}).reduceGroup(new TrieBuilder());
+		//
+		// end of first round
+		//
+		
+		System.out.println("trieStruct: " + trieStruct.count());
 
-	public static void printTrie(InnerTrieNode node) {
-		if (node == null) {
-			System.out.println("null");
-			return;
-		}
-		if (node.candidateID != -1) {
-			System.out.println("<" + candidateLookup.get((node).candidateID).printDecoded(compressionMapping) + ">");
-		} else {
-			InnerTrieNode innerNode = (InnerTrieNode) node;
-			System.out.println();
-			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
-				System.out.print(compressionMapping.get(innerNode.edgeLabels[i]) + ", ");
+		//
+		// begin of all other rounds
+		//
+		DataSet<Tuple2<IntArray, Integer>> solutionSet = deltaAllSupport.first((int) deltaAllSupport.count());
+		broadcastRound.set(0, false);
+		DeltaIteration<Tuple2<IntArray, Integer>, TrieStruct> deltaIteration = solutionSet.iterateDelta(trieStruct, 9999999, 0); //TODO: maxIterations auf 0 / -1 setzen?
+		
+		DataSet<byte[]> trie = trieStruct.map(trieExtractor);
+		DataSet<List<IntArray>> candidateLookup = trieStruct.map(lookupExtractor);
+		
+		System.out.println(trie.count());
+		System.out.println(candidateLookup.count());
+		
+		transactionsMapped = transactions.flatMap(new CandidateMatcherTrie()).withBroadcastSet(trie, TrieBuilder.TRIE_NAME);
+		reducedTransactions = transactionsMapped.groupBy(0).sum(1);
+		
+		filteredSupport = reducedTransactions.filter(minSupportFilter);
+		
+		deltaAllSupport = filteredSupport.map(new DeltaCalculator())
+			.withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
+			.withBroadcastSet(candidateLookup, TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
+		
+		trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
+			private static final long serialVersionUID = 3910614534178503617L;
+
+			public Integer getKey(Tuple2<IntArray, Integer> t) {
+				return 42;
 			}
-			for (int i = 0; i < innerNode.edgeLabels.length; i++) {
-				printTrie(innerNode.children[i]);
-			}
-			System.out.println();
-		}
+		}).reduceGroup(new TrieBuilder())
+		.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME);
+		
+		System.out.println(trieStruct.count());
+
+		deltaIteration.closeWith(deltaAllSupport, trieStruct).writeAsText(args[1]);
+		//
+		// end of all other rounds
+		//
+			
+		System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 	}
 
 	private static void aprioriOnInts(String[] args, ExecutionEnvironment env) throws Exception {

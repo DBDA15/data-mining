@@ -1,17 +1,20 @@
 package de.hpi.dbda;
 
-import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
 
 import de.hpi.dbda.trie.InnerTrieNode;
 
-public class CandidateMatcherTrie implements FlatMapFunction<IntArray, Tuple2<Integer, Integer>> {
+public class CandidateMatcherTrie extends RichFlatMapFunction<IntArray, Tuple2<Integer, Integer>> {
 	private static final long serialVersionUID = -5812427046006186493L;
 	InnerTrieNode trie;
 
-	public CandidateMatcherTrie(InnerTrieNode trie) {
-		this.trie = trie;
+	@Override
+	public void open(org.apache.flink.configuration.Configuration parameters)
+			throws Exception {
+		trie = (InnerTrieNode) getRuntimeContext().getBroadcastVariable(
+				TrieBuilder.TRIE_NAME).get(0);
 	}
 
 	public void flatMap(IntArray transactionWrapper, Collector<Tuple2<Integer, Integer>> out) {
