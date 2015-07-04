@@ -69,9 +69,12 @@ public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Intege
 		return result;
 	}
 	
+	private static ArrayList<IntArray> candidateLookup = null;
+	
 	public static InnerTrieNode candidatesToTrie(Set<IntArray> candidates) {
         TreeSet<IntArray> sortedCandidates = new TreeSet<IntArray>(candidates);
         InnerTrieNode[] currentTriePath = new InnerTrieNode[sortedCandidates.iterator().next().value.length+1];
+        candidateLookup = new ArrayList<IntArray>(sortedCandidates);
 
 		// for every candidate, find the smallest index at which it differs from the previous candidate
 		int[] firstDifferentElementIndices = new int[sortedCandidates.size()];
@@ -175,24 +178,24 @@ public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Intege
 }
 
     @Override
-	public void reduce(Iterable<Tuple2<IntArray, Integer>> largeItemsets,
+	public void reduce(Iterable<Tuple2<IntArray, Integer>> largeItemsIterator,
 			Collector<TrieStruct> out) throws Exception {
 		
-		List<Tuple2<IntArray,Integer>> largeItems=new ArrayList<Tuple2<IntArray, Integer>>();
-		for(Tuple2<IntArray, Integer> largeItem:largeItemsets){
+		List<Tuple2<IntArray,Integer>> largeItems = new ArrayList<Tuple2<IntArray, Integer>>();
+		for(Tuple2<IntArray, Integer> largeItem:largeItemsIterator){
 			largeItems.add(largeItem);
 		}
     	
     	Set<IntArray> candidates = generateCandidatesInt(largeItems);
     	InnerTrieNode trie = candidatesToTrie(candidates);
 
+    	// serialize trie
     	Kryo kryo = new Kryo();
 		Output myOutput = new Output();
 		kryo.writeObject(myOutput, trie);
-		byte[] buffer=myOutput.getBuffer();
+		byte[] buffer = myOutput.getBuffer();
 
 		out.collect(new TrieStruct(buffer, candidateLookup));
-			
 	}
 
 }

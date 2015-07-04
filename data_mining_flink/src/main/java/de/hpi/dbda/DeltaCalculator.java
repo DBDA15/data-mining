@@ -6,6 +6,9 @@ import java.util.List;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 
+/*
+ * Maps every Tuple2<candidate id, count> to Tuple2<actual candidate as IntArray, id>
+ */
 public class DeltaCalculator
 		extends
 		RichMapFunction<Tuple2<Integer, Integer>, Tuple2<IntArray, Integer>> {
@@ -16,6 +19,10 @@ public class DeltaCalculator
 	private List<IntArray> candidateLookup;
 	private boolean firstRound;
 
+	/*
+	 * Maps one Tuple2<candidate id, count> to Tuple2<actual candidate as IntArray, id>
+	 * If firstRound == true then a new IntArray is created.
+	 */
 	public Tuple2<IntArray, Integer> spellOutLargeItem(
 			Tuple2<Integer, Integer> largeItemSet) {
 		if (firstRound) {
@@ -27,6 +34,9 @@ public class DeltaCalculator
 		}
 	}
 
+	/*
+	 * Gets candidateLookup and firstRound from the corresponding Flink broadcasts.
+	 */
 	@Override
 	public void open(org.apache.flink.configuration.Configuration parameters)
 			throws Exception {
@@ -40,12 +50,14 @@ public class DeltaCalculator
 
 	};
 
+	/*
+	 * Simply calls spellOutLargeItem and returns the result.
+	 */
 	@Override
 	public Tuple2<IntArray, Integer> map(Tuple2<Integer, Integer> largeItem)
 			throws Exception {
 		Tuple2<IntArray, Integer> result = spellOutLargeItem(largeItem);
-		return new Tuple2<IntArray, Integer>(result.f0,
-				result.f1);
+		return result;
 	}
 
 }

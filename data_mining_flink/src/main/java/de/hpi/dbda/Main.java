@@ -223,25 +223,17 @@ public class Main {
 			
 			ArrayList<Boolean> broadcastRound=new ArrayList<Boolean>(1);
 			broadcastRound.add(true);
-			DataSet<Tuple2<Set<Integer>, Integer>> deltaAllSupport = filteredSupport.map(new DeltaCalculator()).withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
+			DataSet<Tuple2<IntArray, Integer>> deltaAllSupport = filteredSupport.map(new DeltaCalculator()).withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
 			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
 			
-			DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<Set<Integer>,Integer>,Integer>(){
+			DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
 				private static final long serialVersionUID = 3910614534178503617L;
 
-				public Integer getKey(Tuple2<Set<Integer>, Integer> t) {
+				public Integer getKey(Tuple2<IntArray, Integer> t) {
 					return 42;
 				}
 			}).reduceGroup(new TrieBuilder())
 			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME);
-			
-			List<Tuple2<Integer, Integer>> collected = filteredSupport.collect();
-
-			//count confidence
-			List<Tuple2<IntArray, Integer>> collectedItemSets = spellOutLargeItems(collected, firstRound);
-			for (Tuple2<IntArray, Integer> tuple : collectedItemSets) {
-				allSupport.put(tuple.f0.valueSet(), tuple.f1);
-			}
 			
 			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 
