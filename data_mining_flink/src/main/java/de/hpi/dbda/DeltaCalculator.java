@@ -40,14 +40,20 @@ public class DeltaCalculator
 	@Override
 	public void open(org.apache.flink.configuration.Configuration parameters)
 			throws Exception {
-		candidateLookup = getRuntimeContext().getBroadcastVariable(
-				TrieBuilder.CANDIDATE_LOOKUP_NAME);
 		firstRound = (Boolean) getRuntimeContext().getBroadcastVariable(
 				DeltaCalculator.FIRST_ROUND_NAME).get(0);
+		System.out.println(getRuntimeContext().getBroadcastVariable(DeltaCalculator.FIRST_ROUND_NAME).get(0)
+				+" | "+
+				getRuntimeContext().getBroadcastVariable(TrieBuilder.CANDIDATE_LOOKUP_NAME).get(0));
 		if (firstRound) {
 			candidateLookup = new ArrayList<IntArray>();
+		} else {
+			Object struct = getRuntimeContext().getBroadcastVariable(
+			TrieBuilder.CANDIDATE_LOOKUP_NAME).get(0);
+			candidateLookup = ((TrieStruct)struct).candidateLookup;
+			
+			System.out.println(candidateLookup);
 		}
-
 	};
 
 	/*

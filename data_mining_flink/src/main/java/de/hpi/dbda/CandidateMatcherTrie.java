@@ -1,8 +1,13 @@
 package de.hpi.dbda;
 
+import java.io.ByteArrayInputStream;
+
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
+
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
 
 import de.hpi.dbda.trie.InnerTrieNode;
 
@@ -13,8 +18,17 @@ public class CandidateMatcherTrie extends RichFlatMapFunction<IntArray, Tuple2<I
 	@Override
 	public void open(org.apache.flink.configuration.Configuration parameters)
 			throws Exception {
-		trie = (InnerTrieNode) getRuntimeContext().getBroadcastVariable(
+		byte[] bytes = (byte[]) getRuntimeContext().getBroadcastVariable(
 				TrieBuilder.TRIE_NAME).get(0);
+
+		System.out.println(bytes.length);
+		
+		Kryo kryo = new Kryo();
+    	//kryo.register(InnerTrieNode.class);
+    	//kryo.setRegistrationRequired(false);
+
+		//kryo.readClassAndObject(new Input(new ByteArrayInputStream(bytes)));
+		trie = kryo.readObject(new Input(new ByteArrayInputStream(bytes)), InnerTrieNode.class);
 	}
 
 	public void flatMap(IntArray transactionWrapper, Collector<Tuple2<Integer, Integer>> out) {

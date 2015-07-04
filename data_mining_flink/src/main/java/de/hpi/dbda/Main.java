@@ -16,17 +16,14 @@ import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.operators.DeltaIteration;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.util.Collector;
-
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-
-import de.hpi.dbda.trie.InnerTrieNode;
 
 public class Main {
 	
@@ -203,6 +200,7 @@ public class Main {
 			
 			@Override
 			public List<IntArray> map(TrieStruct value) throws Exception {
+				System.out.println("lookup size: " + value.candidateLookup.size());
 				return value.candidateLookup;
 			}
 		};
@@ -213,21 +211,19 @@ public class Main {
 
 		long startTime = System.currentTimeMillis();
 		DataSet<String> inputLines = env.readTextFile(args[0]);
-		DataSet<IntArray> transactions = inputLines.map(transactionParser);
+		DataSet<IntArray> transactions = inputLines.map(transactionParser).name("transactionsParser");
 
 		//
 		// begin of first round
 		//
 		DataSet<Tuple2<Integer, Integer>> transactionsMapped;
-		transactionsMapped = transactions.flatMap(singleItemsExtractor);
-		DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).sum(1);
+		transactionsMapped = transactions.flatMap(singleItemsExtractor).name("singleItemsExtractor");
+		DataSet<Tuple2<Integer, Integer>> reducedTransactions = transactionsMapped.groupBy(0).sum(1).name("first round sum");
 		
-		DataSet<Tuple2<Integer, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter);
+		DataSet<Tuple2<Integer, Integer>> filteredSupport = reducedTransactions.filter(minSupportFilter).name("first round minSupportFilter");
 		
-		ArrayList<Boolean> broadcastRound=new ArrayList<Boolean>(1);
-		broadcastRound.add(true);
-		DataSet<Tuple2<IntArray, Integer>> deltaAllSupport = filteredSupport.map(new DeltaCalculator())
-			.withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
+		DataSet<Tuple2<IntArray, Integer>> deltaAllSupport = filteredSupport.map(new DeltaCalculator()).name("first round deltaCalculator")
+			.withBroadcastSet(env.fromElements(true), DeltaCalculator.FIRST_ROUND_NAME)
 			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
 
 		DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
@@ -236,34 +232,36 @@ public class Main {
 			public Integer getKey(Tuple2<IntArray, Integer> t) {
 				return 42;
 			}
-		}).reduceGroup(new TrieBuilder());
+		}).reduceGroup(new TrieBuilder()).name("first round build trie");
 		//
 		// end of first round
 		//
 		
-		System.out.println("trieStruct: " + trieStruct.count());
-
 		//
 		// begin of all other rounds
 		//
-		DataSet<Tuple2<IntArray, Integer>> solutionSet = deltaAllSupport.first((int) deltaAllSupport.count());
-		broadcastRound.set(0, false);
-		DeltaIteration<Tuple2<IntArray, Integer>, TrieStruct> deltaIteration = solutionSet.iterateDelta(trieStruct, 9999999, 0); //TODO: maxIterations auf 0 / -1 setzen?
+		//DataSet<Tuple2<IntArray, Integer>> solutionSet = deltaAllSupport.first((int) deltaAllSupport.count());
+		DeltaIteration<Tuple2<IntArray, Integer>, TrieStruct> deltaIteration = deltaAllSupport.iterateDelta(trieStruct, 9999999, 0).name("delta iteration"); //TODO: maxIterations auf 0 / -1 setzen?
+		deltaIteration.setSolutionSetUnManaged(true);
 		
-		DataSet<byte[]> trie = trieStruct.map(trieExtractor);
-		DataSet<List<IntArray>> candidateLookup = trieStruct.map(lookupExtractor);
+		DataSet<byte[]> trie = trieStruct.map(trieExtractor).name("second round trieExtractor");
+		// DataSet<List<IntArray>> candidateLookup = trieStruct.map(lookupExtractor).name("second round lookupExtractor");
 		
-		System.out.println(trie.count());
-		System.out.println(candidateLookup.count());
+		// System.out.println("trie: " + trie.count());
+		// System.out.println("candidateLookup: " + candidateLookup.collect().get(0).size());
 		
-		transactionsMapped = transactions.flatMap(new CandidateMatcherTrie()).withBroadcastSet(trie, TrieBuilder.TRIE_NAME);
-		reducedTransactions = transactionsMapped.groupBy(0).sum(1);
+		transactionsMapped = transactions.flatMap(new CandidateMatcherTrie()).name("second round match candidates")
+				.withBroadcastSet(trie, TrieBuilder.TRIE_NAME);
+		reducedTransactions = transactionsMapped.groupBy(0).sum(1).name("second round count support");
 		
-		filteredSupport = reducedTransactions.filter(minSupportFilter);
+		filteredSupport = reducedTransactions.filter(minSupportFilter).name("second round minSupportFilter");
 		
-		deltaAllSupport = filteredSupport.map(new DeltaCalculator())
-			.withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
-			.withBroadcastSet(candidateLookup, TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
+		deltaAllSupport = filteredSupport.map(new DeltaCalculator()).name("second round deltaCalculator")
+				.withBroadcastSet(env.fromElements(false), DeltaCalculator.FIRST_ROUND_NAME)
+//				.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
+//				.withBroadcastSet(env.fromCollection(broadcastRound), DeltaCalculator.FIRST_ROUND_NAME)
+				.withBroadcastSet(deltaIteration.getWorkset(), TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
+//System.out.println(deltaAllSupport.count());		
 		
 		trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
 			private static final long serialVersionUID = 3910614534178503617L;
@@ -271,15 +269,15 @@ public class Main {
 			public Integer getKey(Tuple2<IntArray, Integer> t) {
 				return 42;
 			}
-		}).reduceGroup(new TrieBuilder())
-		.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME);
+		}).reduceGroup(new TrieBuilder()).name("second round build Trie")
+		.withBroadcastSet(deltaIteration.getWorkset(), TrieBuilder.CANDIDATE_LOOKUP_NAME);
 		
-		System.out.println(trieStruct.count());
-
-		deltaIteration.closeWith(deltaAllSupport, trieStruct).writeAsText(args[1]);
+		DataSet<Tuple2<IntArray, Integer>> result = deltaIteration.closeWith(deltaAllSupport, trieStruct);
 		//
 		// end of all other rounds
 		//
+		
+		System.out.println(result.count());
 			
 		System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
 	}
@@ -449,8 +447,36 @@ public class Main {
 		} while (candidates.size() > 0);
 	}
 
-	public static void main(String[] args) throws Exception {
+	private static void minimalBroadcastFailure(String[] args, ExecutionEnvironment env) throws Exception {
 
+		RichMapFunction<Integer, Boolean> myRichFunction=new RichMapFunction<Integer, Boolean>() {
+			private static final long serialVersionUID = -2146557568793472047L;
+
+			@Override
+			public void open(Configuration parameters) throws Exception {
+				System.out.println("broadcast in open(): " + getRuntimeContext().getBroadcastVariable("TEST").get(0) );
+			}
+			
+			@Override
+			public Boolean map(Integer arg0) throws Exception {
+				return true;
+			}
+		};
+		
+		DataSet<Integer> inputSet = env.fromElements(42);
+		
+		DataSet<Boolean> result1 = inputSet.map(myRichFunction)
+				.withBroadcastSet(env.fromElements(true), "TEST");
+		
+		DataSet<Boolean> result2 = inputSet.map(myRichFunction)
+				.withBroadcastSet(env.fromElements(false), "TEST");
+		
+		System.out.println("result1: " + result1.collect().get(0));		
+		System.out.println("result2: " + result2.collect().get(0));		
+	}
+	
+	
+	public static void main(String[] args) throws Exception {
         if (args.length < 5) {
             System.out.println("please provide the following parameters: input_path, " +
             		"result_file_path, modus, minSupport and minConfidence");
@@ -478,7 +504,8 @@ public class Main {
             aprioriOnInts(args, env);
             break;
             case "trie":
-            aprioriOnIntsWithTrie(args, env);
+                //minimalBroadcastFailure(args, env);
+                aprioriOnIntsWithTrie(args, env);
             break;
             default:
             System.out.println("unknown mode");

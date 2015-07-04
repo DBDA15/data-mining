@@ -220,7 +220,9 @@ public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Intege
 
     	// serialize trie
     	Kryo kryo = new Kryo();
+    	//kryo.register(InnerTrieNode.class);
 		Output myOutput = new Output(new ByteArrayOutputStream());
+		//kryo.writeClassAndObject(myOutput, trie);
 		kryo.writeObject(myOutput, trie);
 		byte[] buffer = myOutput.getBuffer();
 
