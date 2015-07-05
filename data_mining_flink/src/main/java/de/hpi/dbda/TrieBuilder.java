@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import org.apache.flink.api.common.functions.RichGroupReduceFunction;
+import org.apache.flink.api.java.functions.FunctionAnnotation.ReadFields;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
 
@@ -15,6 +16,7 @@ import com.esotericsoftware.kryo.io.Output;
 
 import de.hpi.dbda.trie.InnerTrieNode;
 
+@ReadFields("f0")
 public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Integer>, TrieStruct> {
 	private static final long serialVersionUID = -8917906510553699266L;
 	public static final String CANDIDATE_LOOKUP_NAME = "candidateLookup";

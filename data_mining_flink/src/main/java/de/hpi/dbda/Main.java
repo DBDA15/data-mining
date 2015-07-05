@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.flink.api.common.CodeAnalysisMode;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
@@ -22,6 +23,12 @@ import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.operators.DeltaIteration;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
+
+import de.hpi.dbda.triejobs.LookupExtractor;
+import de.hpi.dbda.triejobs.MyKeySelector;
+import de.hpi.dbda.triejobs.SingleItemsExtractor;
+import de.hpi.dbda.triejobs.TransactionParser;
+import de.hpi.dbda.triejobs.TrieExtractor;
 
 public class Main {
 	
@@ -157,50 +164,15 @@ public class Main {
 	}
 	
 	private static void aprioriOnIntsWithTrie(String[] args, ExecutionEnvironment env) throws Exception {
-		MapFunction<String, IntArray> transactionParser = new MapFunction<String, IntArray>() {
-			private static final long serialVersionUID = -2163238643793472047L;
+		env.getConfig().setCodeAnalysisMode(CodeAnalysisMode.OPTIMIZE);
 
-			public IntArray map(String line) {
-				String[] items = line.split(" ");
-				int[] itemset = new int[items.length];
-				for (int i = 0; i < items.length; i++){
-					itemset[i] = Integer.parseInt(items[i]);
-				}
-				Arrays.sort(itemset);
-				IntArray ar = new IntArray(itemset);
-				return ar;
-			}
+		MapFunction<String, IntArray> transactionParser = new TransactionParser();
 
-		};
+		FlatMapFunction<IntArray, Tuple2<Integer, Integer>> singleItemsExtractor = new SingleItemsExtractor();
 
-		FlatMapFunction<IntArray, Tuple2<Integer, Integer>> singleItemsExtractor = new FlatMapFunction<IntArray, Tuple2<Integer, Integer>>() {
-			private static final long serialVersionUID = 4206575656443369070L;
-
-			public void flatMap(IntArray transaction, Collector<Tuple2<Integer, Integer>> out) throws Exception {
-				for (int item : transaction.value) {
-					out.collect(new Tuple2<Integer, Integer>(item, 1));
-				}
-			}
-
-		};
-
-		MapFunction<TrieStruct, byte[]> trieExtractor = new MapFunction<TrieStruct, byte[]>() {
-			private static final long serialVersionUID = -2145638643793472047L;
-
-			@Override
-			public byte[] map(TrieStruct value) throws Exception {
-				return value.trie;
-			}
-		};
+		MapFunction<TrieStruct, byte[]> trieExtractor = new TrieExtractor();
 		
-		MapFunction<TrieStruct, List<IntArray>> lookupExtractor = new MapFunction<TrieStruct, List<IntArray>>() {
-			private static final long serialVersionUID = -2145546767567472047L;
-			
-			@Override
-			public List<IntArray> map(TrieStruct value) throws Exception {
-				return value.candidateLookup;
-			}
-		};
+		MapFunction<TrieStruct, List<IntArray>> lookupExtractor = new LookupExtractor();
 		
 		FilterFunction<Tuple2<Integer, Integer>> minSupportFilter = new MinSupportFilter<Integer>(minSupport);
 
@@ -221,13 +193,7 @@ public class Main {
 			.withBroadcastSet(env.fromElements(true), DeltaCalculator.FIRST_ROUND_NAME)
 			.withBroadcastSet(env.fromElements(1), TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
 
-		DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
-			private static final long serialVersionUID = 3910614534178503617L;
-
-			public Integer getKey(Tuple2<IntArray, Integer> t) {
-				return 42;
-			}
-		}).reduceGroup(new TrieBuilder()).name("first round build trie");
+		DataSet<TrieStruct> trieStruct = deltaAllSupport.groupBy(new MyKeySelector()).reduceGroup(new TrieBuilder()).name("first round build trie");
 		//
 		// end of first round
 		//
@@ -252,13 +218,7 @@ public class Main {
 				.withBroadcastSet(env.fromElements(false), DeltaCalculator.FIRST_ROUND_NAME)
 				.withBroadcastSet(candidateLookup, TrieBuilder.CANDIDATE_LOOKUP_NAME); // TODO: prüfen, obs auch ohne candidateLookup-Broadcast geht
 		
-		trieStruct = deltaAllSupport.groupBy(new KeySelector<Tuple2<IntArray,Integer>,Integer>(){
-			private static final long serialVersionUID = 3910614534178503617L;
-
-			public Integer getKey(Tuple2<IntArray, Integer> t) {
-				return 42;
-			}
-		}).reduceGroup(new TrieBuilder()).name("second round build Trie")
+		trieStruct = deltaAllSupport.groupBy(new MyKeySelector()).reduceGroup(new TrieBuilder()).name("second round build Trie")
 		.withBroadcastSet(deltaIteration.getWorkset(), TrieBuilder.CANDIDATE_LOOKUP_NAME);
 		
 		DataSet<Tuple2<IntArray, Integer>> result = deltaIteration.closeWith(deltaAllSupport, trieStruct);
@@ -266,6 +226,7 @@ public class Main {
 		// end of all other rounds
 		//
 		
+		env.getConfig().setCodeAnalysisMode(CodeAnalysisMode.OPTIMIZE);
 		List<Tuple2<IntArray, Integer>> collected = result.collect();
 		for (Tuple2<IntArray, Integer> tuple : collected) {
 			allSupport.put(tuple.f0.valueSet(), tuple.f1);

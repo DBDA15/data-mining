@@ -4,11 +4,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFields;
+import org.apache.flink.api.java.functions.FunctionAnnotation.ReadFields;
 import org.apache.flink.api.java.tuple.Tuple2;
 
 /*
  * Maps every Tuple2<candidate id, count> to Tuple2<actual candidate as IntArray, id>
  */
+@ReadFields("f0")
+@ForwardedFields("f1->f1")
 public class DeltaCalculator
 		extends
 		RichMapFunction<Tuple2<Integer, Integer>, Tuple2<IntArray, Integer>> {
