@@ -3,7 +3,6 @@ package de.hpi.dbda;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Map;
 
 public class IntArray implements Serializable, Comparable<IntArray> {
 	private static final long serialVersionUID = 9178408728199032638L;

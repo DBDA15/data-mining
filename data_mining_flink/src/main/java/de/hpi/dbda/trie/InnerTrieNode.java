@@ -8,6 +8,9 @@ public class InnerTrieNode implements Serializable {
 	public int candidateID = -1;
 	public InnerTrieNode[] children;
 
+	public InnerTrieNode() { // the kryo deserialization needs a constructor without arguments
+	}
+	
 	public InnerTrieNode(int[] edgeLabels, InnerTrieNode[] children) {
 		this.edgeLabels = edgeLabels;
 		this.children = children;

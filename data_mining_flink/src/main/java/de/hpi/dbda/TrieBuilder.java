@@ -1,6 +1,5 @@
 package de.hpi.dbda;
 
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -220,12 +219,10 @@ public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Intege
 
     	// serialize trie
     	Kryo kryo = new Kryo();
-    	//kryo.register(InnerTrieNode.class);
-		Output myOutput = new Output(new ByteArrayOutputStream());
-		//kryo.writeClassAndObject(myOutput, trie);
+		Output myOutput = new Output(4096, -1);
 		kryo.writeObject(myOutput, trie);
 		byte[] buffer = myOutput.getBuffer();
-
+		
 		out.collect(new TrieStruct(buffer, candidateLookup));
 	}
 

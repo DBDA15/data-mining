@@ -21,13 +21,7 @@ public class CandidateMatcherTrie extends RichFlatMapFunction<IntArray, Tuple2<I
 		byte[] bytes = (byte[]) getRuntimeContext().getBroadcastVariable(
 				TrieBuilder.TRIE_NAME).get(0);
 
-		System.out.println(bytes.length);
-		
 		Kryo kryo = new Kryo();
-    	//kryo.register(InnerTrieNode.class);
-    	//kryo.setRegistrationRequired(false);
-
-		//kryo.readClassAndObject(new Input(new ByteArrayInputStream(bytes)));
 		trie = kryo.readObject(new Input(new ByteArrayInputStream(bytes)), InnerTrieNode.class);
 	}
 
