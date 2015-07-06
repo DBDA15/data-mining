@@ -339,9 +339,6 @@ public class Main {
 				allSupport.put(tuple.f0.valueSet(), tuple.f1);
 			}
 			
-			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
-
-			startTime = System.currentTimeMillis();
 			List<Tuple2<IntArray, Integer>> largeItemSets= spellOutLargeItems(collected, firstRound);
 			candidates = generateCandidatesInt(largeItemSets);
 			largeItems.addAll(candidates);
@@ -358,8 +355,10 @@ public class Main {
 				System.out.print("; ");
 			}
 			System.out.println("");*/
-			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
+		
+		System.out.println("runtime: " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		System.out.println("large item sets: " + allSupport.size()); 
 	}
 
 	public static List<Tuple2<IntArray, Integer>> spellOutLargeItems(List<Tuple2<Integer, Integer>> collected, boolean firstRound) {
@@ -564,7 +563,7 @@ public class Main {
 
 	public static void main(String[] args) throws Exception {
 
-        if (args.length < 6) {
+        if (args.length < 5) {
             System.out.println("please provide the following parameters: input_path, " +
             		"result_file_path, modus, minSupport, minRating and minConfidence");
             System.out.println("for example:");
@@ -578,8 +577,8 @@ public class Main {
         }
         
 		minSupport = Integer.parseInt(args[3]);
-		minRating = Integer.parseInt(args[4]);
-		minConf = Double.parseDouble(args[5]);
+		minRating = -1;
+		minConf = Double.parseDouble(args[4]);
 
 		final ExecutionEnvironment env = ExecutionEnvironment
 		        .getExecutionEnvironment();
@@ -614,7 +613,7 @@ public class Main {
 					o.removeAll(s);
 					AssociationRule<Integer> asr = new AssociationRule<Integer>(s, o);
 					if (checkARConfidenceAndSupport(asr)) {
-						System.out.println(Utilities.printAssociationRule(asr));
+						//System.out.println(Utilities.printAssociationRule(asr));
 						ar.add(asr);
 					}
 				}
@@ -631,7 +630,7 @@ public class Main {
 					o.removeAll(s);
 					AssociationRule<String> asr = new AssociationRule<String>(s, o);
 					if (checkARConfidenceAndSupport(asr)) {
-						System.out.println(Utilities.printAssociationRule(asr));
+						//System.out.println(Utilities.printAssociationRule(asr));
 						ar.add(asr);
 					}
 				}
