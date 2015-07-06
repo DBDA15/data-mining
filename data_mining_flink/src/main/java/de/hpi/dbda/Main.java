@@ -232,7 +232,8 @@ public class Main {
 			allSupport.put(tuple.f0.valueSet(), tuple.f1);
 		}
 			
-		System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		System.out.println("runtime: " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		System.out.println("large item sets: " + collected.size());
 	}
 
 	private static void aprioriOnInts(String[] args, ExecutionEnvironment env) throws Exception {
@@ -448,7 +449,7 @@ public class Main {
 					o.removeAll(s);
 					AssociationRule<Integer> asr = new AssociationRule<Integer>(s, o);
 					if (checkARConfidenceAndSupport(asr)) {
-						System.out.println(Utilities.printAssociationRule(asr));
+						//System.out.println(Utilities.printAssociationRule(asr));
 						ar.add(asr);
 					}
 				}
@@ -465,7 +466,7 @@ public class Main {
 					o.removeAll(s);
 					AssociationRule<String> asr = new AssociationRule<String>(s, o);
 					if (checkARConfidenceAndSupport(asr)) {
-						System.out.println(Utilities.printAssociationRule(asr));
+						//System.out.println(Utilities.printAssociationRule(asr));
 						ar.add(asr);
 					}
 				}

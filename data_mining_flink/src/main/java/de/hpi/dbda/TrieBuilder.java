@@ -211,7 +211,7 @@ public class TrieBuilder extends RichGroupReduceFunction<Tuple2<IntArray, Intege
     	
     	Set<IntArray> candidates = generateCandidatesInt(largeItems);
     	
-    	System.out.println("candidates: "+candidates.size());
+    	//System.out.println("candidates: "+candidates.size());
     	
     	if(candidates.size() == 0){
     		return;
