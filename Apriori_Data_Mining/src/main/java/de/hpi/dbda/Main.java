@@ -27,6 +27,7 @@ import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFlatMapFunction;
+import org.apache.spark.storage.StorageLevel;
 
 import de.hpi.dbda.trie.InnerTrieNode;
 import de.hpi.dbda.test;
@@ -429,6 +430,7 @@ public class Main {
 		long startTime = System.currentTimeMillis();
 		JavaRDD<String> inputLines = context.textFile(args[0]);
 		JavaRDD<IntArray> transactions = inputLines.map(transactionParser);
+		transactions.persist(StorageLevel.MEMORY_ONLY());
 		do {
 			JavaPairRDD<Integer, Integer> transactionsMapped;
 			if (firstRound) {
@@ -448,9 +450,8 @@ public class Main {
 				allSupport.put(tuple._1.valueSet(), tuple._2);
 			}
 			
-			System.out.println("the map-reduce-step took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+			System.out.println("finished another map-reduce-step");
 
-			startTime = System.currentTimeMillis();
 			List<Tuple2<IntArray, Integer>> largeItemSets= spellOutLargeItems(collected, firstRound);
 			candidates = generateCandidatesInt(largeItemSets);
 			if (candidates.size() > 0) {
@@ -466,9 +467,11 @@ public class Main {
 				System.out.print("; ");
 			}
 			System.out.println("");*/
-			System.out.println("the candidate generation took " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds and generated " + candidates.size() + " candidates");
 		} while (candidates.size() > 0);
-	}
+		
+		System.out.println("runtime: " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
+		System.out.println("large item sets: " + allSupport.size()); 
+		}
 
 	//TODO was private
 	public static List<Tuple2<IntArray, Integer>> spellOutLargeItems(List<Tuple2<Integer, Integer>> collected, boolean firstRound) {
